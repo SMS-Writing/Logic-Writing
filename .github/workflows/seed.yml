@@ -7,7 +7,6 @@ permissions:
 jobs:
   seed:
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('seed/RUN') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

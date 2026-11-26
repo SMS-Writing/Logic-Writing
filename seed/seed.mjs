@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 const cfg = (await import('node:fs')).readFileSync('config.js','utf8');
 const URL = cfg.match(/supabaseUrl:\s*"([^"]+)"/)[1], KEY = cfg.match(/supabaseAnonKey:\s*"([^"]+)"/)[1];
-const CODE = (await import('node:fs')).readFileSync('seed/RUN','utf8').trim();
+const CODE = (await import('node:fs')).readFileSync("seed/RUN","utf8").split("\n")[0].trim();
 const tag = randomBytes(3).toString('hex');
 const pw = () => randomBytes(9).toString('base64url');
 async function call(path, { method = 'POST', token, body, prefer } = {}) {
