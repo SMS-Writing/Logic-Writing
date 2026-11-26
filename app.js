@@ -14,6 +14,7 @@ const STEPS=[
  {t:'AI 조언 검토',s:'수용 · 부분 수용 · 거부',g:'Ⅱ. 비판적 검토',goal:'AI의 지적을 원문과 대조해 수용·부분 수용·거부로 판단하고, 그 근거를 쓴다.'},
  {t:'동료 검토',s:'메모 · 독자 요지 · 종합 피드백',g:'Ⅱ. 비판적 검토',goal:'동료의 글에 구체적인 메모와 종합 피드백을 남기고, 각 단락이 어떻게 읽혔는지 독자 요지로 알려 준다.'},
  {t:'피드백 답변',s:'이해 · 판단 · 반영 계획',g:'Ⅱ. 비판적 검토',goal:'받은 의견마다 어떻게 이해했는지, 수용 여부와 그 이유, 수정에 어떻게 반영할지 답한다.'},
+ {t:'초고 동료 검토',s:'전체 원고 · 질문 응답 · 수정 방향',g:'Ⅱ. 비판적 검토',goal:'LMS에 올린 동료의 초고 전체를 읽고 점검 질문에 답하며 내용·구성·표현·인용 면의 수정 방향을 제안하고, 내가 받은 제안에는 판단과 반영 계획으로 답한다.'},
  {t:'수정개요 작성',s:'단락 이동·통합·추가·삭제',g:'Ⅲ. 고쳐 쓰기 설계',goal:'자기 점검·AI 조언·동료 피드백을 종합해, 수정 후 단락 배열과 요지로 새 글의 설계도를 만든다.'},
  {t:'학습 성찰과 제출',s:'판단 이유 정리',g:'Ⅲ. 고쳐 쓰기 설계',goal:'무엇을 왜 그렇게 고치기로 했는지 설명하고 학습 기록을 제출한다.'}
 ];
@@ -35,8 +36,9 @@ const ABS=/(모든|항상|반드시|전혀|절대|누구나|무조건|완전히|
 const CFG=window.AIDT_CONFIG||{};
 const LIVE=!!(CFG.supabaseUrl&&CFG.supabaseAnonKey&&/^https:\/\//.test(CFG.supabaseUrl))&&!/[?&]demo\b/.test(location.search);
 const DKEY='aidt-demo-v3';
+let MYDR={given:[],received:[]},DRCOUNT={};
 let db=null,ME=null,PEOPLE={},MYP=null,S=null,MY=null,VIEW=null,CUR=null,PEERS=[],MYREV={fb:new Set(),cm:new Set(),n:0},TD=null,CLASSES=[];
-const UI={tab7:'doc',tab8:'memo',tabT:'rec',tpage:'dash',tclass:'',sel:null,pending:null,showResolved:false,focusC:null,auth:'login'};
+const UI={tab9:'give',tab7:'doc',tab8:'memo',tabT:'rec',tpage:'dash',tclass:'',sel:null,pending:null,showResolved:false,focusC:null,auth:'login'};
 
 /* ================= 유틸 ================= */
 const $=s=>document.querySelector(s);
@@ -114,7 +116,7 @@ async function boot(){
   await afterLogin();
  }catch(e){$('#main').innerHTML=`<div class="notice w">불러오기 오류: ${esc(e.message||e)}</div>`}
 }
-function blankData(){return {title:'',author:ME?ME.name:'',thesis:'',paras:[],outline:['','',''],ai:[],aiExtra:'',applied:{},rev:[],revLogic:'',revReason:'',reflect:REFQ.map(()=>''),status:'진행 중',intro:false,step:0}}
+function blankData(){return {selfchk:{},title:'',author:ME?ME.name:'',thesis:'',paras:[],outline:['','',''],ai:[],aiExtra:'',applied:{},rev:[],revLogic:'',revReason:'',reflect:REFQ.map(()=>''),status:'진행 중',intro:false,step:0}}
 async function afterLogin(){
  const ps=await q(db.from('profiles').select('*'));PEOPLE={};ps.forEach(p=>PEOPLE[p.id]=p);PEOPLE[ME.id]=ME;
  VIEW=null;CUR=null;UI.pending=null;
@@ -123,7 +125,7 @@ async function afterLogin(){
   MYP=await q(db.from('projects').select('*').eq('owner',ME.id).maybeSingle());
   if(!MYP)MYP=await q(db.from('projects').insert({owner:ME.id,class_code:ME.class_code,data:blankData(),shared:false,status:'진행 중'}).select().single());
   S=Object.assign(blankData(),MYP.data||{});if(!S.author)S.author=ME.name;
-  MY=await loadCtx(MYP.id);await loadMyReviews();
+  MY=await loadCtx(MYP.id);await loadMyReviews();await loadDR();
  }
  render();window.scrollTo(0,0);
 }
@@ -219,15 +221,17 @@ function gistState(p){
 }
 const anOK=p=>AN.every(([k])=>len(p.an&&p.an[k])>=2);
 const respOK=r=>r&&r.verdict&&len(r.plan)>=10;
-function doneFlags(D,X,rev){
+function doneFlags(D,X,rev,DR){
+ DR=DR||{given:[],received:[]};const recv=DR.received.filter(r=>r.summary&&r.summary.submitted);
  const P=D.paras||[],pts=(D.ai||[]).filter(e=>!e.refusal).flatMap(e=>e.points);
  const need=(X?X.comments:[]).filter(c=>c.tag!=='잘된 점'),fb=X?X.feedback:[];
- return [!!D.intro,P.length>=2&&len(D.thesis)>=10,P.length>0&&P.every(p=>gistState(p).ok),P.length>0&&P.every(anOK),(D.outline||[]).every(r=>len(r)>=20),
+ return [!!D.intro,P.length>=2&&len(D.thesis)>=10,P.length>0&&P.every(p=>gistState(p).ok),P.length>0&&P.every(anOK),(D.outline||[]).every(r=>len(r)>=20)&&selfDone(D),
   pts.length>0,pts.length>0&&pts.every(p=>p.verdict&&len(p.reason)>=20&&(p.verdict==='거부'||len(p.plan)>=10)),rev>0,(need.length+fb.length)>0&&need.every(c=>respOK(c.resp))&&fb.every(f=>respOK(f.resp)),
+  DR.given.some(r=>r.summary&&r.summary.submitted)&&recv.length>0&&recv.every(drRespDone),
   (D.rev||[]).length>=2&&D.rev.every(r=>len(r.gist)>=10||r.op==='삭제')&&len(D.revReason)>=20,D.status==='제출 완료'];
 }
-const stepDone=i=>!!S&&doneFlags(S,MY,MYREV.n)[i];
-const pctOf=f=>Math.round(f.slice(1).filter(Boolean).length/10*100);
+const stepDone=i=>!!S&&doneFlags(S,MY,MYREV.n,MYDR)[i];
+const pctOf=f=>Math.round(f.slice(1).filter(Boolean).length/11*100);
 const gistsDone=()=>S.paras.length>0&&S.paras.every(p=>gistState(p).ok);
 const anDone=()=>S.paras.length>0&&S.paras.every(anOK);
 function locked(i){if(i===5)return !(gistsDone()&&anDone()&&len(S.thesis)>=10);if(i===6)return !S.ai.some(e=>!e.refusal);return false}
@@ -260,25 +264,26 @@ function renderNav(){
  h+=`<div class="tools"><button onclick="dlPortfolio()">⬇ 학습 기록 내려받기 (.doc)</button>
   ${!LIVE?`<button onclick="demoReset('draft')">↺ 체험 데이터: 작성 중</button><button onclick="demoReset('full')">📘 체험 데이터: 모든 단계 완성본</button>`:''}</div>`;
  $('#nav').innerHTML=h;
- $('#gprog').style.display='';const p=pctOf(doneFlags(S,MY,MYREV.n));$('#gbar').style.width=p+'%';$('#gpct').textContent=p+'%';
+ $('#gprog').style.display='';const p=pctOf(doneFlags(S,MY,MYREV.n,MYDR));$('#gbar').style.width=p+'%';$('#gpct').textContent=p+'%';
 }
 async function go(n){
  if(locked(n))toast(n===5?'AI 단계는 중심 주장·모든 단락의 요지·논증 요소를 완성해야 열립니다.':'먼저 5단계에서 AI에게 질문하세요.');
  S.step=n;UI.sel=null;UI.pending=null;$('#selbtn').style.display='none';save();
  if(n===7){VIEW=null;PEERS=await q(db.from('projects').select('*').eq('shared',true).neq('owner',ME.id).order('updated_at',{ascending:false}));PEERS=PEERS.filter(p=>p.class_code===ME.class_code)}
- if(n>=8&&n<=10){MY=await loadCtx(MYP.id)}
+ if(n>=8&&n<=11){MY=await loadCtx(MYP.id);await loadDR()}
+ if(n===9)await loadCounts();
  render();window.scrollTo(0,0);
 }
 function head(i,concept,open){const s=STEPS[i];return `<div class="kicker">${i?i+'단계':'도입'}${s.core?' · 이 교과서의 핵심 활동':''}</div><h2>${s.t}</h2>
  <div class="goal"><b>학습 목표</b><span>${s.goal}</span></div>${concept?`<details class="concept" ${open?'open':''}><summary>개념 익히기</summary>${concept}</details>`:''}`}
-function nextBtn(i){return i<10?`<div class="row" style="margin-top:18px">${i>0?`<button class="btn" onclick="go(${i-1})">← 이전</button>`:''}<button class="btn p" onclick="go(${i+1})">다음: ${STEPS[i+1].t} →</button></div>`:''}
+function nextBtn(i){return i<11?`<div class="row" style="margin-top:18px">${i>0?`<button class="btn" onclick="go(${i-1})">← 이전</button>`:''}<button class="btn p" onclick="go(${i+1})">다음: ${STEPS[i+1].t} →</button></div>`:''}
 
 /* ================= 0. 안내 ================= */
 function step0(){
  return head(0)+`
  <div class="card"><h3>이 교과서에서 하는 일</h3>
   <p>이미 써 둔 자신의 글을 <b>단락 요지</b>로 압축하고, 그 요지를 바탕으로 논증 구조를 분석·점검한 뒤, AI와 동료의 의견을 <b>비판적으로 검토</b>해 <b>수정개요</b>를 세웁니다. 이 교과서는 글을 대신 고쳐 주지 않습니다. 고쳐야 할 곳을 스스로 찾고, 왜 그렇게 고치는지 설명할 수 있게 돕습니다.</p>
-  <div class="flow">${STEPS.slice(1).map((s,i)=>`<span class="${s.core?'k':''}">${i+1} ${s.t}</span>${i<9?'<i>→</i>':''}`).join('')}</div>
+  <div class="flow">${STEPS.slice(1).map((s,i)=>`<span class="${s.core?'k':''}">${i+1} ${s.t}</span>${i<10?'<i>→</i>':''}`).join('')}</div>
  </div>
  <div class="prin">
   <div><b>① 요지는 내 말로</b>모든 활동의 출발점은 단락마다 직접 쓴 한 문장 요지입니다. 원문 복사·붙여 넣기는 막혀 있습니다. 요지가 안 써지는 단락이 곧 고쳐야 할 단락입니다.</div>
@@ -403,6 +408,51 @@ function diagnose(){
  if(last&&S.thesis&&jacc(last.gist,S.thesis)<0.3)out.push(['w','중심 주장과 마지막 단락 요지의 표현이 많이 다릅니다. 결론이 중심 주장보다 강하거나 약해지지 않았는지 확인하세요.']);
  return out;
 }
+const SELFQ=[
+ {s:'단락 하나하나',qs:[
+  ['p1','모든 단락의 요지를 한 문장으로 쓸 수 있었는가?'],
+  ['p2','각 단락에 중심 생각이 하나만 들어 있는가? (두 가지 주장이 섞인 단락은 없는가)'],
+  ['p3','단락의 중심 문장(소주제문)이 단락 앞부분에서 분명히 드러나는가?'],
+  ['p4','단락 안의 모든 문장이 그 단락의 중심 생각을 뒷받침하는가? (벗어난 문장은 없는가)'],
+  ['p5','단락의 길이가 내용의 중요도에 맞게 균형 잡혀 있는가? (나누거나 합칠 단락은 없는가)']]},
+ {s:'중심 주장과의 관계',qs:[
+  ['t1','모든 단락의 요지가 중심 주장과 직접 연결되는가?','관계가 약해 빼도 되는 단락은 없는가?'],
+  ['t2','요지만 이어 읽어도 중심 주장이 입증되는가?'],
+  ['t3','글을 다 쓴 지금도 처음 세운 중심 주장이 그대로 맞는가? (쓰는 동안 주장이 바뀌거나 커지지 않았는가)'],
+  ['t4','서론에서 밝힌 목적과 예고한 내용을 본론이 모두 다루는가?'],
+  ['t5','결론이 새로운 주장을 덧붙이지 않고 본론의 논의를 바탕으로 정리하는가?']]},
+ {s:'순서와 흐름',qs:[
+  ['o1','단락의 배열에 분명한 원리(중요도, 인과, 시간, 일반→구체 등)가 있는가?'],
+  ['o2','같은 내용이 여러 단락에 흩어져 반복되지 않는가?'],
+  ['o3','각 단락의 첫 문장이 앞 단락과의 관계를 보여 주는가? (그러나·따라서·또한 등)'],
+  ['o4','순서를 바꾸면 더 설득력이 생기는 단락은 없는가?'],
+  ['o5','가장 강한 근거가 효과적인 위치에 놓여 있는가?']]},
+ {s:'근거와 논증',qs:[
+  ['e1','각 근거 단락에 구체적인 자료나 사례가 있는가?'],
+  ['e2','근거들의 분량과 깊이가 한쪽에 치우치지 않고 균형 잡혀 있는가?'],
+  ['e3','근거에서 주장으로 넘어가는 과정에 빠진 단계나 숨은 전제가 없는가?'],
+  ['e4','지나친 일반화나 단정적 표현(모든, 반드시, 전혀 등) 없이 근거가 보여 주는 만큼만 주장하는가?'],
+  ['e5','예상되는 반론을 다루는 자리가 있고, 그 반론에 응답하는가?']]},
+ {s:'독자의 자리에서',qs:[
+  ['r1','처음 읽는 독자도 단락마다 ‘이 내용이 왜 여기 있는가’를 알 수 있는가?'],
+  ['r2','핵심 개념을 독자가 이해할 수 있게 정의하고, 같은 뜻으로 일관되게 쓰는가?'],
+  ['r3','독자가 가장 먼저 반문할 지점에 답이 준비되어 있는가?'],
+  ['r4','제목이 글의 중심 주장과 범위를 정확히 보여 주는가?']]}];
+const SRATE=[['yes','그렇다'],['part','부분적으로'],['no','아니다']];
+const selfQs=()=>SELFQ.flatMap(g=>g.qs);
+const selfDone=D=>{const c=D.selfchk||{};return selfQs().every(([id])=>c[id]&&c[id].r&&(c[id].r==='yes'||len(c[id].n)>=10))};
+function selfHTML(){
+ const c=S.selfchk||{},n=selfQs().filter(([id])=>c[id]&&c[id].r).length,tot=selfQs().length;
+ return `<div class="card"><h3>자가 점검 — 역개요로 내 글 살펴보기 (${n}/${tot})</h3>
+ <p class="hint">글쓰기 센터에서 역개요를 검토할 때 쓰는 질문들입니다. 위의 뼈대(요지·논증 요소)를 보면서 답하세요. ‘부분적으로’나 ‘아니다’에는 <b>어느 단락이 문제이고 어떻게 고칠지</b> 쓰세요(10자 이상). 이 항목들은 10단계 수정개요의 ‘반영할 의견’으로 넘어갑니다.</p>
+ <div class="progress"><i style="width:${n/tot*100}%"></i></div>
+ ${SELFQ.map(g=>`<details ${g.qs.some(([id])=>!(c[id]&&c[id].r))?'open':''} style="margin-bottom:8px"><summary style="cursor:pointer;font-weight:700;padding:6px 0">${g.s} <span class="hint">(${g.qs.filter(([id])=>c[id]&&c[id].r).length}/${g.qs.length})</span></summary>
+  ${g.qs.map(([id,qq])=>{const x=c[id]||{};return `<div class="pt" style="background:#fff"><div style="font-size:14px">${qq}</div>
+   <div class="judge">${SRATE.map(([v,l])=>`<label><input type="radio" name="sc_${id}" ${x.r===v?'checked':''} onchange="setSelf('${id}','r','${v}')"> ${l}</label>`).join('')}</div>
+   ${x.r&&x.r!=='yes'?`<textarea class="t" rows="2" placeholder="어느 단락이 문제인가? 어떻게 고칠까? (10자 이상)" oninput="setSelf('${id}','n',this.value)" ${NP}>${esc(x.n||'')}</textarea>`:''}</div>`}).join('')}</details>`).join('')}
+ </div>`;
+}
+function setSelf(id,f,v){S.selfchk=S.selfchk||{};S.selfchk[id]=S.selfchk[id]||{};S.selfchk[id][f]=v;save();if(f==='r')render();else renderNav()}
 function elLine(p){return AN.filter(([k])=>k!=='evidence').map(([k,l])=>`${l}: ${none(p.an[k])?'<span style="color:#9b2c2c">없음</span>':esc(cut(p.an[k],36))}`).join(' · ')}
 function step4(){
  const P=S.paras;if(!P.length)return head(4)+`<div class="notice w">먼저 1~3단계를 진행하세요.</div>`;
@@ -418,7 +468,7 @@ function step4(){
  </div>
  <div class="card"><h3>현재 구조 진단</h3><p class="hint">각 20자 이상. 자기 글의 약점을 먼저 찾은 사람이 AI와 동료의 의견도 잘 판단합니다.</p>
   ${OUTQ.map((q,k)=>`<label class="f">${q}</label><textarea class="t" rows="3" oninput="S.outline[${k}]=this.value;save();renderNav()" ${NP}>${esc(S.outline[k])}</textarea>`).join('')}
- </div>`+nextBtn(4);
+ </div>`+selfHTML()+nextBtn(4);
 }
 
 /* ================= 5. AI 조언 ================= */
@@ -515,7 +565,7 @@ function mock(type,qq){
 /* ================= 6. AI 조언 검토 ================= */
 function step6(){
  if(locked(6))return head(6)+`<div class="notice w">🔒 먼저 5단계에서 AI에게 질문하세요.</div><button class="btn p" onclick="go(5)">5단계로</button>`;
- return head(6,`<p>AI의 지적은 <b>정답이 아니라 가설</b>입니다. 본문을 본 적 없는 AI는 틀릴 수 있습니다. 각 지적을 <b>원문과 대조한 뒤</b> 수용·부분 수용·거부 중 하나로 판단하고, 내 글의 어느 부분 때문에 그렇게 판단했는지 근거를 쓰세요. 근거가 분명하다면 거부도 좋은 판단입니다.</p><p>수용하거나 부분 수용한 지적은 <b>내 글에 어떻게 반영할지</b>까지 씁니다. 이 내용은 9단계 수정개요로 이어집니다.</p>`,true)+`
+ return head(6,`<p>AI의 지적은 <b>정답이 아니라 가설</b>입니다. 본문을 본 적 없는 AI는 틀릴 수 있습니다. 각 지적을 <b>원문과 대조한 뒤</b> 수용·부분 수용·거부 중 하나로 판단하고, 내 글의 어느 부분 때문에 그렇게 판단했는지 근거를 쓰세요. 근거가 분명하다면 거부도 좋은 판단입니다.</p><p>수용하거나 부분 수용한 지적은 <b>내 글에 어떻게 반영할지</b>까지 씁니다. 이 내용은 10단계 수정개요로 이어집니다.</p>`,true)+`
  ${S.ai.map((e,k)=>`<div class="ai"><div class="q">Q${k+1}. [${esc(e.type)}] ${esc(e.q)} <span class="hint">· ${esc(fmt(e.at))}</span></div>
   ${e.ext?'<div class="hint" style="margin-bottom:4px">아래는 AI의 답을 내가 요약한 것입니다.</div>':''}
   ${e.points.map((pt,j)=>`<div class="pt"><div class="tx ${e.ext?'ext':''}">${pt.p!==null&&pt.p!==undefined?`<b>${pt.p+1}단락</b> · `:''}${esc(pt.text)}</div>
@@ -676,25 +726,133 @@ function cmpView(){
  const R=readerNames(MY);
  if(!R.length)return `<div class="notice w">아직 독자 요지가 없습니다. 동료가 7단계에서 내 글의 각 단락 아래에 자신이 읽은 요지를 쓰면 이곳에 비교가 나타납니다.</div>`;
  const rd=(id,i)=>{const r=MY.reader.find(x=>x.reviewer===id&&x.p===i);return r?r.text:''};
- return `<p class="hint">일치도는 표현의 겹침으로 계산한 <b>참고 수치</b>입니다. ‘다르게 읽힘’이 나온 단락은 중심 문장이 분명한지, 주장이 둘 섞여 있지 않은지 원문에서 확인하세요. 이 단락들은 9단계 ‘반영할 의견’에 자동으로 올라갑니다.</p>
+ return `<p class="hint">일치도는 표현의 겹침으로 계산한 <b>참고 수치</b>입니다. ‘다르게 읽힘’이 나온 단락은 중심 문장이 분명한지, 주장이 둘 섞여 있지 않은지 원문에서 확인하세요. 이 단락들은 10단계 ‘반영할 의견’에 자동으로 올라갑니다.</p>
  <div style="overflow:auto"><table class="tb"><tr><th style="width:44px">단락</th><th>내가 의도한 요지</th>${R.map(r=>`<th>${esc(nameOf(r))}이(가) 읽은 요지</th>`).join('')}</tr>
  ${S.paras.map((p,i)=>`<tr><td><b>${i+1}</b></td><td>${p.gist?esc(p.gist):'<i class="hint">미작성</i>'}</td>${R.map(r=>{const g=rd(r,i);if(!len(g))return '<td class="hint">—</td>';const[l,lab]=level(jacc(p.gist,g));return `<td>${esc(g)}<br><span class="lv ${l}">${lab}</span></td>`}).join('')}</tr>`).join('')}</table></div>`;
 }
 
-/* ================= 9. 수정개요 ================= */
+/* ================= 9. 초고 동료 검토 (전체 원고) ================= */
+const DRQ=[
+ {s:'주제와 구성',qs:[
+  ['a1','보고서의 목적과 성격에 맞게 쓰였는가?'],
+  ['a2','주제가 전체 흐름을 통해 일관적으로 표현되고 있는가?'],
+  ['a3','글의 내용이 논리적으로 전개되고 있는가?']]},
+ {s:'표현과 문장',qs:[
+  ['c1','문장 성분 간 호응이 정확한가?'],
+  ['c2','중의적 표현은 없는가?'],
+  ['c3','불필요한 피동 표현이나 문법 오류는 없는가?'],
+  ['c4','의미가 적절한 어휘를 선택했는가?'],
+  ['c5','객관적인 표현을 사용하고 있는가?'],
+  ['c6','맞춤법, 띄어쓰기 등은 정확한가?']]},
+ {s:'인용과 참조',qs:[
+  ['d1','직접 인용은 자료에서 꼭 필요한 부분을 가져왔는가?'],
+  ['d2','간접 인용은 자신의 말로 정확하게 요약했는가?'],
+  ['d3','인용과 참조의 출처는 빠짐없이 다 표기했는가?'],
+  ['d4','인용과 주석의 형식을 잘 지켰는가?'],
+  ['d5','참고문헌의 표기와 정렬 방식은 올바른가?'],
+  ['d6','전체 인용 및 참조 형식은 통일되어 있는가?']]}];
+const DRS=[['thesis','내가 읽은 이 글의 중심 주장 — 한 문장, 내 말로',10],['best','이 글에서 가장 잘된 점',10],
+ ['content','내용 면 수정 방향 — 주장·근거·논리 전개',15],['structure','구성 면 수정 방향 — 단락 배열·연결, 서론과 결론',15],
+ ['expression','표현 면 수정 방향 — 문장 호응·어휘·피동·객관성·맞춤법',15],['citation','인용·참조 면 수정 방향 — 인용 방식·출처·주석·참고문헌',15],
+ ['first','가장 먼저 고쳐야 할 한 가지와 그 이유',10]];
+const DRA=[['content','내용'],['structure','구성'],['expression','표현'],['citation','인용·참조'],['first','우선 과제']];
+const RATE=[['good','잘됨'],['fix','보완 필요'],['na','해당 없음']];
+const drQs=()=>DRQ.flatMap(g=>g.qs);
+function drComplete(r){const a=r.answers||{},s=r.summary||{};return drQs().every(([id])=>a[id]&&a[id].r&&(a[id].r!=='fix'||len(a[id].n)>=10))&&DRS.every(([k,,m])=>len(s[k])>=m)}
+function drRespDone(r){return DRA.every(([k])=>respOK(r.resp&&r.resp[k]))}
+let DR_MISSING=false;
+async function loadDR(){
+ const g=await db.from('draft_reviews').select('*').eq('reviewer',ME.id);
+ if(g.error){DR_MISSING=true;MYDR={given:[],received:[]};return}
+ const r=await db.from('draft_reviews').select('*').eq('author',ME.id);
+ MYDR={given:g.data||[],received:r.data||[]};
+}
+async function loadCounts(){
+ DRCOUNT={};
+ if(LIVE){const d=await db.rpc('review_counts');(d.data||[]).forEach(x=>DRCOUNT[x.author]=Number(x.n))}
+ else{const d=await q(db.from('draft_reviews').select('*'));d.forEach(x=>DRCOUNT[x.author]=(DRCOUNT[x.author]||0)+1)}
+}
+function stepDraft(){
+ const t=UI.tab9,recv=MYDR.received.filter(r=>r.summary&&r.summary.submitted),mine=MYDR.given[0];
+ return head(9,`<p>이 단계에서는 <b>초고 전체</b>를 읽은 동료 <b>1명</b>이 점검 질문에 답하고, <b>내용·구성·표현·인용</b> 면에서 수정 방향을 제안합니다. 7단계가 단락과 문장에 메모를 다는 검토였다면, 이 단계는 글 전체를 한 편의 보고서로 놓고 평가합니다.</p>
+ <p><b>초고는 LMS 토론 게시판 댓글</b>에서 각자 확인합니다. 이 홈페이지에는 원고를 올리지 않습니다. 반드시 끝까지 읽은 뒤 작성하세요.</p>
+ <p>검토자는 고칠 문장을 대신 써 주지 않습니다. <b>어디에서 무엇이 왜 문제인지</b> 짚고, 고칠 <b>방향</b>을 제안합니다. 글쓴이는 받은 제안마다 수용·부분 수용·거부를 판단하고 반영 계획을 씁니다. 이 내용은 10단계 수정개요로 이어집니다.</p>`,true)+`
+ <div class="tabs"><button class="${t==='give'?'on':''}" onclick="UI.tab9='give';render()">✍️ 동료 초고 검토하기 ${mine&&mine.summary&&mine.summary.submitted?'✓':''}</button><button class="${t==='get'?'on':''}" onclick="UI.tab9='get';render()">📥 내가 받은 검토 (${recv.length})</button></div>
+ ${DR_MISSING?'<div class="notice w">초고 동료 검토 기능을 쓰려면 서버 설정을 한 번 더 해야 합니다. 교수자에게 알려 주세요.</div>':t==='give'?drGive():drGet()}`+nextBtn(9);
+}
+function drGive(){
+ const mine=MYDR.given[0];
+ if(!mine){
+  const mates=Object.values(PEOPLE).filter(p=>p.role==='student'&&p.class_code===ME.class_code&&p.id!==ME.id).sort((a,b)=>(DRCOUNT[a.id]||0)-(DRCOUNT[b.id]||0)||a.name.localeCompare(b.name));
+  return `<div class="card"><h3>검토할 동료 고르기</h3>
+  <p class="hint">LMS 토론 게시판에서 초고를 읽을 동료 <b>1명</b>을 고르세요. 교수자가 짝을 정해 주었다면 그 동료를 고릅니다. 아직 검토를 받지 못한 동료(<b>0명</b>)를 먼저 골라 주세요.</p>
+  ${mates.length?`<select class="t" id="dr_pick"><option value="">동료 선택</option>${mates.map(p=>`<option value="${p.id}">${esc(p.name)} · 받은 검토 ${DRCOUNT[p.id]||0}명</option>`).join('')}</select>
+  <div class="row" style="margin-top:10px"><button class="btn p" onclick="startDR()">이 동료의 초고 검토 시작</button></div>`:'<div class="notice w">같은 분반에 가입한 다른 학생이 아직 없습니다.</div>'}</div>`;
+ }
+ const a=mine.answers||{},sm=mine.summary||{},qs=drQs(),done=qs.filter(([id])=>a[id]&&a[id].r).length,sub=!!sm.submitted;
+ return `<div class="toggle" style="justify-content:space-between"><span><b>검토 대상: ${esc(nameOf(mine.author))}</b><br><span class="hint">LMS 토론 게시판에서 ${esc(nameOf(mine.author))}의 초고를 열어 두고 작성하세요.</span></span><span>${sub?'<span class="lv h">제출함</span>':''} <button class="btn s" onclick="resetDR()">대상 바꾸기</button></span></div>
+ <div class="row" style="justify-content:space-between"><b>점검 질문 ${done} / ${qs.length}</b><span class="hint">입력하면 자동 저장됩니다</span></div>
+ <div class="progress"><i style="width:${done/qs.length*100}%"></i></div>
+ ${DRQ.map(g=>`<div class="card"><h3>${g.s}</h3>${g.qs.map(([id,qq])=>{const x=a[id]||{};return `<div class="pt" style="background:#fff"><div style="font-weight:600;font-size:14px">${qq}</div>
+  <div class="judge">${RATE.map(([v,l])=>`<label><input type="radio" name="dr_${id}" ${x.r===v?'checked':''} onchange="setDrAns('${id}','r','${v}')"> ${l}</label>`).join('')}</div>
+  ${x.r&&x.r!=='na'?`<textarea class="t" rows="2" placeholder="${x.r==='fix'?'어느 단락·문장에서 무엇이 문제인가? 어떻게 고치면 좋을까? (10자 이상)':'(선택) 잘된 부분의 위치나 이유'}" oninput="setDrAns('${id}','n',this.value)" ${NP}>${esc(x.n||'')}</textarea>`:''}</div>`}).join('')}</div>`).join('')}
+ <div class="card"><h3>수정 방향 제안</h3><p class="hint">고칠 문장을 대신 써 주지 말고, 방향과 이유를 제안하세요. 위 점검에서 ‘보완 필요’로 답한 내용을 종합하면 됩니다.</p>
+  ${DRS.map(([k,lab,m])=>`<label class="f">${lab} <span class="hint">(${m}자 이상)</span></label><textarea class="t" rows="${k==='thesis'?2:3}" oninput="setDrSum('${k}',this.value)" ${NP}>${esc(sm[k]||'')}</textarea>`).join('')}
+  <div class="row" style="margin-top:12px"><button class="btn p" onclick="submitDR()">${sub?'고쳐서 다시 제출':'검토 제출'}</button>${sub?`<span class="hint">제출: ${esc(fmt(sm.submitted_at))}</span>`:''}</div></div>`;
+}
+async function startDR(){const id=$('#dr_pick').value;if(!id)return toast('검토할 동료를 고르세요.');await q(db.from('draft_reviews').insert({author:id,reviewer:ME.id,answers:{},summary:{}}));await loadDR();render()}
+async function resetDR(){const m=MYDR.given[0];if(!confirm(`${nameOf(m.author)}에 대한 검토 내용을 지우고 대상을 다시 고를까요?`))return;await q(db.from('draft_reviews').delete().eq('id',m.id));await loadDR();await loadCounts();render()}
+function saveDR(now){const m=MYDR.given[0];const f=async()=>{const r=await db.from('draft_reviews').update({answers:m.answers,summary:m.summary,updated_at:new Date().toISOString()}).eq('id',m.id);if(r.error)toast('저장 실패: '+r.error.message);else flashSaved()};if(now)return f();later('dr',f)}
+function setDrAns(id,f,v){const m=MYDR.given[0];m.answers=m.answers||{};m.answers[id]=m.answers[id]||{};m.answers[id][f]=v;saveDR(f==='r');if(f==='r')render()}
+function setDrSum(k,v){const m=MYDR.given[0];m.summary=m.summary||{};m.summary[k]=v;saveDR()}
+async function submitDR(){const m=MYDR.given[0];
+ const miss=drQs().filter(([id])=>!(m.answers[id]&&m.answers[id].r)).length;if(miss)return toast(`답하지 않은 점검 질문이 ${miss}개 있습니다.`);
+ const nf=drQs().filter(([id])=>m.answers[id].r==='fix'&&len(m.answers[id].n)<10).length;if(nf)return toast(`‘보완 필요’ 항목 ${nf}개에 구체적인 설명(10자 이상)을 쓰세요.`);
+ const sm=DRS.find(([k,,mm])=>len(m.summary[k])<mm);if(sm)return toast(`‘${sm[1].split(' —')[0]}’을(를) ${sm[2]}자 이상 쓰세요.`);
+ m.summary.submitted=true;m.summary.submitted_at=new Date().toISOString();await saveDR(true);toast('초고 검토를 제출했습니다.');render()}
+function drFlags(r){const a=r.answers||{};return DRQ.map(g=>({s:g.s,items:g.qs.filter(([id])=>a[id]&&a[id].r==='fix').map(([id,qq])=>({qq,n:a[id].n}))})).filter(g=>g.items.length)}
+function drSummaryHTML(r){const s=r.summary||{},a=r.answers||{},good=drQs().filter(([id])=>a[id]&&a[id].r==='good').length,fix=drQs().filter(([id])=>a[id]&&a[id].r==='fix').length;
+ return `<div class="row" style="justify-content:space-between"><span><b>${esc(nameOf(r.reviewer))}</b>의 검토 → <b>${esc(nameOf(r.author))}</b>의 초고</span><span class="hint">${esc(fmt(s.submitted_at))} · 잘됨 ${good} · 보완 필요 ${fix}</span></div>
+ <div class="ex" style="margin:8px 0"><div><b>이 글에서 가장 잘된 점</b> ${esc(s.best)}</div></div>
+ ${drFlags(r).map(g=>`<div style="margin:8px 0"><b style="font-size:13px">${g.s} — 보완 필요</b><ul class="diag">${g.items.map(it=>`<li><b>${esc(it.qq)}</b><br><span class="hint">${esc(it.n)}</span></li>`).join('')}</ul></div>`).join('')||'<p class="hint">‘보완 필요’로 답한 점검 항목이 없습니다.</p>'}`}
+function drGet(){
+ const recv=MYDR.received.filter(r=>r.summary&&r.summary.submitted);
+ if(!recv.length)return `<div class="notice w">아직 제출된 검토가 없습니다. 동료가 이 단계에서 내 초고 검토를 제출하면 이곳에 나타납니다. LMS 토론 게시판에 초고를 올렸는지 확인하세요.</div>`;
+ return recv.map(r=>{const s=r.summary,[l,lab]=level(jacc(S.thesis,s.thesis));return `<div class="card">${drSummaryHTML(r)}
+  <div class="pcard" style="margin:10px 0"><div class="gistbox" style="background:#eef0f3"><small style="color:#444">내가 세운 중심 주장</small>${esc(S.thesis||'(1단계에서 작성)')}</div><div class="gistbox"><small>동료가 읽은 중심 주장</small>${esc(s.thesis)} <span class="lv ${l}">${lab}</span></div></div>
+  <h3 style="margin-top:14px">수정 방향 제안에 답하기</h3><p class="hint">각 제안을 어떻게 이해했는지, 수용 여부와 이유, 어떻게 반영할지 쓰세요. (10자 이상)</p>
+  ${DRA.map(([k,lab2])=>{const x=(r.resp&&r.resp[k])||{};return `<div class="fbbox" style="border-left-color:var(--accent)"><b>${lab2}</b><div style="margin:4px 0">${esc(s[k])}</div>
+   ${radios(`dr${r.id}${k}`,x.verdict,`(v=>setDrResp('${r.id}','${k}','verdict',v))`)}
+   <textarea class="t" rows="2" placeholder="이해한 내용 · 판단 이유 · 반영 계획" oninput="setDrResp('${r.id}','${k}','plan',this.value)" ${NP}>${esc(x.plan||'')}</textarea></div>`}).join('')}</div>`}).join('');
+}
+function setDrResp(id,k,f,v){const r=MYDR.received.find(x=>x.id===id);r.resp=r.resp||{};r.resp[k]=Object.assign({verdict:'',plan:''},r.resp[k]||{});r.resp[k][f]=v;
+ const send=async()=>{const x=await db.from('draft_reviews').update({resp:r.resp}).eq('id',id);if(x.error)toast('저장 실패: '+x.error.message);else flashSaved()};
+ if(f==='verdict'){send();render()}else{later('drr'+id,send);renderNav()}}
+function teacherDR(uid){
+ const recv=(TD.dr||[]).filter(r=>r.author===uid),given=(TD.dr||[]).filter(r=>r.reviewer===uid);
+ const box=r=>`<div class="card">${r.summary&&r.summary.submitted?drSummaryHTML(r)+DRS.map(([k,lab])=>`<p style="margin:6px 0"><b style="font-size:13px">${lab.split(' —')[0]}</b><br>${esc(r.summary[k])}</p>`).join('')+DRA.map(([k,lab])=>{const x=r.resp&&r.resp[k];return x&&x.verdict?`<div class="hint"><b>글쓴이 답변(${lab})</b> [${esc(x.verdict)}] ${esc(x.plan)}</div>`:''}).join(''):`<p class="hint">${esc(nameOf(r.reviewer))} → ${esc(nameOf(r.author))}: 작성 중(미제출)</p>`}</div>`;
+ return `<h3>받은 초고 검토 (${recv.length})</h3>${recv.map(box).join('')||'<p class="hint">없음</p>'}<h3>이 학생이 한 초고 검토 (${given.length})</h3>${given.map(box).join('')||'<p class="hint">없음</p>'}`;
+}
+function drDoc(r){const s=r.summary||{};return `<p><b>검토자: ${esc(nameOf(r.reviewer))}</b><br>읽은 중심 주장: ${esc(s.thesis)}<br>가장 잘된 점: ${esc(s.best)}</p>`+
+ drFlags(r).map(g=>`<p class="c"><b>${g.s} — 보완 필요</b><br>${g.items.map(it=>`· ${esc(it.qq)} → ${esc(it.n)}`).join('<br>')}</p>`).join('')+
+ `<table><tr><th>영역</th><th>수정 방향 제안</th><th>글쓴이 답변</th></tr>${DRA.map(([k,lab])=>{const x=r.resp&&r.resp[k];return `<tr><td>${lab}</td><td>${esc(s[k])}</td><td>${x&&x.verdict?`[${esc(x.verdict)}] ${esc(x.plan)}`:''}</td></tr>`}).join('')}</table>`}
+
+/* ================= 10. 수정개요 ================= */
 function applyItems(){
  const out=[],acc=v=>['수용','부분 수용'].includes(v);
  MY.comments.forEach(c=>{if(c.resp&&acc(c.resp.verdict))out.push({key:'c'+c.id,src:'메모 · '+(c.auto?'표현 점검':nameOf(c.author)),p:c.p,tag:c.tag,v:c.resp.verdict,text:c.resp.plan})});
  MY.feedback.forEach(f=>{if(f.resp&&acc(f.resp.verdict))out.push({key:'f'+f.id,src:'종합 피드백 · '+nameOf(f.reviewer),p:null,tag:'종합',v:f.resp.verdict,text:f.resp.plan})});
  S.ai.forEach((e,k)=>{if(!e.refusal)e.points.forEach((pt,j)=>{if(acc(pt.verdict))out.push({key:`a${k}_${j}`,src:e.ext?'AI 지적 · '+(e.tool||'외부 AI'):'질문 생성기',p:pt.p,tag:'AI',v:pt.verdict,text:pt.plan||pt.reason})})});
+ selfQs().forEach(([id,qq])=>{const x=(S.selfchk||{})[id];if(x&&(x.r==='no'||x.r==='part'))out.push({key:'s'+id,src:'자가 점검 · '+cut(qq,30),p:null,tag:'자가 점검',v:x.r==='no'?'아니다':'부분적으로',text:x.n})});
+ MYDR.received.filter(r=>r.summary&&r.summary.submitted).forEach(r=>DRA.forEach(([k,lab])=>{const x=r.resp&&r.resp[k];if(x&&acc(x.verdict))out.push({key:'d'+r.id+'_'+k,src:'초고 검토 · '+nameOf(r.reviewer),p:null,tag:lab,v:x.verdict,text:x.plan})}));
  S.paras.forEach((p,i)=>{const R=MY.reader.filter(r=>r.p===i&&len(r.text));if(R.length&&Math.min(...R.map(r=>jacc(p.gist,r.text)))<0.18)out.push({key:'r'+i,src:'독자 요지 비교',p:i,tag:'다르게 읽힘',v:'',text:'독자가 이 단락의 요지를 의도와 다르게 읽음'})});
  return out;
 }
 function initRev(){if(S.rev.length&&!confirm('지금의 수정개요를 지우고 현재 글 구조에서 다시 시작할까요?'))return;S.rev=S.paras.map((p,i)=>({id:uid(),from:i,op:'유지',role:p.role,gist:p.gist,why:''}));save();render()}
-function step9(){
+function stepRev(){
  const items=applyItems(),ap=items.filter(x=>S.applied[x.key]).length;
  return head(9,`<p><b>역개요</b>가 ‘지금 글이 어떻게 짜여 있는가’라면, <b>수정개요</b>는 ‘고친 글을 어떻게 짤 것인가’입니다. 수정개요도 <b>단락 요지</b>로 씁니다. 수정 후 각 단락이 무엇을 주장할지 한 문장으로 쓸 수 없다면, 아직 고칠 방향이 정해지지 않은 것입니다.</p><p>고치는 순서는 큰 것에서 작은 것으로 갑니다. ① 중심 주장·전체 배열 → ② 단락의 역할과 연결 → ③ 단락 안의 근거·전제 → ④ 문장·표현.</p>`,true)+`
- <div class="card"><h3>반영하기로 한 의견 (${ap}/${items.length} 반영)</h3><p class="hint">6·8단계에서 ‘수용’ 또는 ‘부분 수용’한 의견과, 다르게 읽힌 단락이 모입니다. 수정개요에 반영했으면 체크하세요.</p>
+ <div class="card"><h3>반영하기로 한 의견 (${ap}/${items.length} 반영)</h3><p class="hint">4단계 자가 점검에서 ‘아니다·부분적으로’로 답한 항목, 6·8·9단계에서 ‘수용’ 또는 ‘부분 수용’한 의견,, 다르게 읽힌 단락이 모입니다. 수정개요에 반영했으면 체크하세요.</p>
   ${items.length?`<div style="overflow:auto"><table class="tb"><tr><th style="width:56px">반영</th><th style="width:56px">단락</th><th style="width:170px">출처</th><th>나의 반영 계획 / 판단</th></tr>${items.map(x=>`<tr><td style="text-align:center"><input type="checkbox" ${S.applied[x.key]?'checked':''} onchange="S.applied['${x.key}']=this.checked;save();render()" style="width:auto"></td><td>${x.p===null||x.p===undefined?'전체':x.p+1}</td><td><span class="badge">${esc(x.tag)}</span><div class="ref">${esc(x.src)}${x.v?' · '+x.v:''}</div></td><td>${esc(x.text)}</td></tr>`).join('')}</table></div>`:'<p class="hint">아직 모인 의견이 없습니다. 6·8단계에서 판단을 마치면 이곳에 나타납니다.</p>'}
  </div>
  <div class="card"><h3>수정개요 — 수정 후 단락 배열과 요지</h3>
@@ -714,29 +872,29 @@ function step9(){
   <label class="f">단락 사이의 논리적 연결을 보완할 방법</label><textarea class="t" rows="3" oninput="S.revLogic=this.value;save()" ${NP}>${esc(S.revLogic)}</textarea>
   <label class="f">자기 점검·AI 조언·동료 피드백을 반영한 수정 판단의 이유 (20자 이상)</label><textarea class="t" rows="4" oninput="S.revReason=this.value;save();renderNav()" ${NP}>${esc(S.revReason)}</textarea>
  </div>
- <div class="notice i">수정개요대로 글을 고친 뒤 1단계에서 본문을 다시 저장하면, 바뀐 단락은 2단계에서 요지를 다시 확인하도록 표시됩니다.</div>`+nextBtn(9);
+ <div class="notice i">수정개요대로 글을 고친 뒤 1단계에서 본문을 다시 저장하면, 바뀐 단락은 2단계에서 요지를 다시 확인하도록 표시됩니다.</div>`+nextBtn(10);
 }
 function setRev(i,k,v,re){S.rev[i][k]=v;save();renderNav();if(re)render()}
 function mvRev(i,d){const a=S.rev;[a[i],a[i+d]]=[a[i+d],a[i]];if(a[i+d].op==='유지')a[i+d].op='이동';save();render()}
 
-/* ================= 10. 성찰 ================= */
-function step10(){
+/* ================= 11. 성찰 ================= */
+function stepRef(){
  const sub=S.status==='제출 완료';
- return head(10,`<p>글의 구조를 고치는 것만큼 중요한 일은 <b>왜 그렇게 고쳤는지 설명하는 일</b>입니다. 막연한 소감 대신, 단락 번호와 받은 의견을 짚어 가며 구체적으로 쓰세요.</p>`,true)+`
+ return head(11,`<p>글의 구조를 고치는 것만큼 중요한 일은 <b>왜 그렇게 고쳤는지 설명하는 일</b>입니다. 막연한 소감 대신, 단락 번호와 받은 의견을 짚어 가며 구체적으로 쓰세요.</p>`,true)+`
  <div class="card"><h3>성찰 질문</h3>${REFQ.map((qq,k)=>`<label class="f">${k+1}. ${qq}</label><textarea class="t" rows="3" oninput="S.reflect[${k}]=this.value;save()" ${NP}>${esc(S.reflect[k])}</textarea>`).join('')}</div>
  <div class="card"><h3>제출</h3>
-  <div class="stats">${STEPS.slice(1,10).map((s,i)=>`<div class="stat"><b>${stepDone(i+1)?'✓':'—'}</b>${i+1}. ${s.t}</div>`).join('')}</div>
+  <div class="stats">${STEPS.slice(1,11).map((s,i)=>`<div class="stat"><b>${stepDone(i+1)?'✓':'—'}</b>${i+1}. ${s.t}</div>`).join('')}</div>
   ${sub?`<div class="notice o">✓ 학습 기록을 제출했습니다. 제출 후에도 내용을 고칠 수 있습니다.</div>`:''}
   <div class="row"><button class="btn p" onclick="submitAll()">${sub?'다시 제출':'학습 기록 제출 완료'}</button><button class="btn" onclick="dlPortfolio()">⬇ 학습 기록 (.doc)</button><button class="btn" onclick="dlRev()">⬇ 수정개요만 (.doc)</button><button class="btn" onclick="dlTxt()">⬇ 본문 (.txt)</button></div>
-  <p class="hint">.doc 파일은 한글·Word에서 열립니다. 제출한 기록은 교수자가 바로 확인합니다.</p></div><div class="row" style="margin-top:18px"><button class="btn" onclick="go(9)">← 이전</button></div>`;
+  <p class="hint">.doc 파일은 한글·Word에서 열립니다. 제출한 기록은 교수자가 바로 확인합니다.</p></div><div class="row" style="margin-top:18px"><button class="btn" onclick="go(10)">← 이전</button></div>`;
 }
-function submitAll(){const miss=STEPS.slice(1,10).map((s,i)=>stepDone(i+1)?null:(i+1)+'단계').filter(Boolean);if(miss.length&&!confirm(`아직 끝나지 않은 단계가 있습니다: ${miss.join(', ')}\n그래도 제출할까요?`))return;if(REFQ.some((_,k)=>len(S.reflect[k])<20))return toast('성찰 질문에 각각 20자 이상 답하세요.');S.status='제출 완료';save();render();toast('학습 기록을 제출했습니다.')}
+function submitAll(){const miss=STEPS.slice(1,11).map((s,i)=>stepDone(i+1)?null:(i+1)+'단계').filter(Boolean);if(miss.length&&!confirm(`아직 끝나지 않은 단계가 있습니다: ${miss.join(', ')}\n그래도 제출할까요?`))return;if(REFQ.some((_,k)=>len(S.reflect[k])<20))return toast('성찰 질문에 각각 20자 이상 답하세요.');S.status='제출 완료';save();render();toast('학습 기록을 제출했습니다.')}
 
 /* ================= 교수자 ================= */
 async function loadTeacher(){
  CLASSES=await q(db.from('classes').select('*').order('code'));
- const [projects,comments,feedback]=await Promise.all([q(db.from('projects').select('*')),q(db.from('comments').select('*')),q(db.from('feedback').select('*'))]);
- TD={projects,comments,feedback};
+ const [projects,comments,feedback,dr]=await Promise.all([q(db.from('projects').select('*')),q(db.from('comments').select('*')),q(db.from('feedback').select('*')),db.from('draft_reviews').select('*').then(r=>r.data||[])]);
+ TD={projects,comments,feedback,dr};
 }
 async function tgo(p){UI.tpage=p;VIEW=null;CUR=null;UI.pending=null;await loadTeacher();render();window.scrollTo(0,0)}
 function studentRows(){
@@ -745,10 +903,11 @@ function studentRows(){
   const pr=TD.projects.find(p=>p.owner===st.id),D=pr?Object.assign(blankData(),pr.data):null;
   const X=pr?{comments:TD.comments.filter(c=>c.project===pr.id),feedback:TD.feedback.filter(f=>f.project===pr.id)}:{comments:[],feedback:[]};
   const rev=TD.feedback.filter(f=>f.reviewer===st.id&&(!pr||f.project!==pr.id)).length+TD.comments.filter(c=>c.author===st.id&&(!pr||c.project!==pr.id)).length;
-  const f=D?doneFlags(D,X,rev):Array(11).fill(false);const nx=f.findIndex((v,i)=>i>0&&!v);
+  const DRx={given:(TD.dr||[]).filter(r=>r.reviewer===st.id),received:(TD.dr||[]).filter(r=>r.author===st.id)};
+  const f=D?doneFlags(D,X,rev,DRx):Array(12).fill(false);const nx=f.findIndex((v,i)=>i>0&&!v);
   const pts=D?D.ai.filter(e=>!e.refusal).flatMap(e=>e.points):[],need=X.comments.filter(c=>c.tag!=='잘된 점');
   return {st,pr,D,pct:pctOf(f),cur:nx<0?'완료':nx+'. '+STEPS[nx].t,gist:D?`${D.paras.filter(p=>gistState(p).ok).length}/${D.paras.length}`:'-',ai:`${pts.filter(p=>p.verdict).length}/${pts.length}`,
-   resp:`${need.filter(c=>respOK(c.resp)).length+X.feedback.filter(x=>respOK(x.resp)).length}/${need.length+X.feedback.length}`,rev,status:pr?pr.status:'시작 전',shared:pr&&pr.shared,upd:pr?fmt(pr.updated_at):''};
+   resp:`${need.filter(c=>respOK(c.resp)).length+X.feedback.filter(x=>respOK(x.resp)).length}/${need.length+X.feedback.length}`,rev,drg:DRx.given.filter(r=>r.summary&&r.summary.submitted).length,drr:DRx.received.filter(r=>r.summary&&r.summary.submitted).length,status:pr?pr.status:'시작 전',shared:pr&&pr.shared,upd:pr?fmt(pr.updated_at):''};
  });
 }
 function teacherDash(){
@@ -758,8 +917,8 @@ function teacherDash(){
  return `<div class="kicker">교수자</div><h2>학생 현황</h2>
  ${!LIVE?'<div class="notice a">체험 모드입니다. 오른쪽 위에서 학생 계정으로 바꾸면 학생 화면을, 다시 선민서(교수자)로 돌아오면 그 결과를 이곳에서 볼 수 있습니다.</div>':''}
  <div class="row" style="margin-bottom:12px"><select class="t" style="width:auto" onchange="UI.tclass=this.value;render()"><option value="">전체 분반</option>${CLASSES.map(c=>`<option value="${esc(c.code)}" ${UI.tclass===c.code?'selected':''}>${esc(c.name)}</option>`).join('')}</select><button class="btn s" onclick="tgo('dash')">↻ 새로고침</button><button class="btn s" onclick="dlCSV()">⬇ 현황표 (.csv)</button></div>
- <div class="card"><div style="overflow:auto"><table class="tb"><tr><th>학생</th><th>분반</th><th>진행률</th><th>다음 할 단계</th><th>요지 완성</th><th>AI 지적 판단</th><th>받은 의견 답변</th><th>동료 검토</th><th>공개</th><th>상태</th><th>최근 저장</th><th></th></tr>
- ${rows.length?rows.map(r=>`<tr><td><b>${esc(r.st.name)}</b></td><td>${esc((CLASSES.find(c=>c.code===r.st.class_code)||{}).name||r.st.class_code||'')}</td><td><div class="progress" style="margin:4px 0;width:80px"><i style="width:${r.pct}%"></i></div>${r.pct}%</td><td>${esc(r.cur)}</td><td>${r.gist}</td><td>${r.ai}</td><td>${r.resp}</td><td>${r.rev}건</td><td>${r.shared?'공개':'—'}</td><td>${esc(r.status)}</td><td class="hint">${esc(r.upd)}</td><td>${r.pr?`<button class="btn s p" onclick="openStudent('${r.pr.id}')">열기</button>`:''}</td></tr>`).join(''):'<tr><td colspan="12" class="hint">아직 가입한 학생이 없습니다. ‘분반·참여 코드’에서 코드를 확인해 학생들에게 알려 주세요.</td></tr>'}</table></div></div>
+ <div class="card"><div style="overflow:auto"><table class="tb"><tr><th>학생</th><th>분반</th><th>진행률</th><th>다음 할 단계</th><th>요지 완성</th><th>AI 지적 판단</th><th>받은 의견 답변</th><th>동료 검토</th><th>초고 검토<br>(함/받음)</th><th>공개</th><th>상태</th><th>최근 저장</th><th></th></tr>
+ ${rows.length?rows.map(r=>`<tr><td><b>${esc(r.st.name)}</b></td><td>${esc((CLASSES.find(c=>c.code===r.st.class_code)||{}).name||r.st.class_code||'')}</td><td><div class="progress" style="margin:4px 0;width:80px"><i style="width:${r.pct}%"></i></div>${r.pct}%</td><td>${esc(r.cur)}</td><td>${r.gist}</td><td>${r.ai}</td><td>${r.resp}</td><td>${r.rev}건</td><td>${r.drg} / ${r.drr}</td><td>${r.shared?'공개':'—'}</td><td>${esc(r.status)}</td><td class="hint">${esc(r.upd)}</td><td>${r.pr?`<button class="btn s p" onclick="openStudent('${r.pr.id}')">열기</button>`:''}</td></tr>`).join(''):'<tr><td colspan="13" class="hint">아직 가입한 학생이 없습니다. ‘분반·참여 코드’에서 코드를 확인해 학생들에게 알려 주세요.</td></tr>'}</table></div></div>
  <div class="card"><h3>메모 유형 분포</h3><div class="bars">${Object.entries(tc).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div><span>${esc(k)}</span><i style="width:${v/mx*100}%;background:${TAGS[k]||'#999'}"></i><span>${v}</span></div>`).join('')||'<p class="hint">메모 없음</p>'}</div><p class="hint">학생들의 글에서 자주 지적된 논리 문제를 다음 수업 주제로 고를 때 참고하세요.</p></div>`;
 }
 async function openStudent(pid){VIEW=await loadCtx(pid);UI.tabT='rec';UI.pending=null;render();window.scrollTo(0,0)}
@@ -767,8 +926,8 @@ function teacherStudent(){
  const t=UI.tabT,D=Object.assign(blankData(),VIEW.project.data);
  return `<button class="back" onclick="VIEW=null;CUR=null;tgo('dash')">← 학생 현황</button>
  <div class="kicker">교수자 · 학생 기록</div><h2>${esc(nameOf(VIEW.project.owner))} <span class="hint" style="font-size:15px">· ${esc(D.title||'제목 없음')} · ${esc(VIEW.project.status)}</span></h2>
- <div class="tabs"><button class="${t==='rec'?'on':''}" onclick="UI.tabT='rec';render()">📚 학습 기록</button><button class="${t==='doc'?'on':''}" onclick="UI.tabT='doc';render()">📝 글에 메모하기</button><button class="${t==='fb'?'on':''}" onclick="UI.tabT='fb';render()">🧾 종합 피드백</button></div>
- ${t==='rec'?`<div class="row" style="margin-bottom:10px"><button class="btn s" onclick="dlPortfolio(VIEW)">⬇ 이 학생 기록 (.doc)</button></div><div class="preview">${portfolioBody(D,VIEW)}</div>`:t==='doc'?docView(VIEW,'teacher'):fbForm(VIEW)}`;
+ <div class="tabs"><button class="${t==='rec'?'on':''}" onclick="UI.tabT='rec';render()">📚 학습 기록</button><button class="${t==='doc'?'on':''}" onclick="UI.tabT='doc';render()">📝 글에 메모하기</button><button class="${t==='fb'?'on':''}" onclick="UI.tabT='fb';render()">🧾 종합 피드백</button><button class="${t==='dr'?'on':''}" onclick="UI.tabT='dr';render()">📋 초고 동료 검토</button></div>
+ ${t==='rec'?`<div class="row" style="margin-bottom:10px"><button class="btn s" onclick="dlPortfolio(VIEW)">⬇ 이 학생 기록 (.doc)</button></div><div class="preview">${portfolioBody(D,VIEW,(TD.dr||[]).filter(r=>r.author===VIEW.project.owner))}</div>`:t==='doc'?docView(VIEW,'teacher'):t==='dr'?teacherDR(VIEW.project.owner):fbForm(VIEW)}`;
 }
 function classesPage(){
  return `<div class="kicker">교수자</div><h2>분반·참여 코드</h2>
@@ -785,7 +944,8 @@ function dlCSV(){const rows=studentRows();const e=s=>'"'+String(s??'').replace(/
 const DOCCSS='<style>body{font-family:"맑은 고딕",sans-serif;font-size:11pt;line-height:1.7}h1{font-size:16pt}h2{font-size:13pt;border-bottom:1px solid #999;margin-top:22pt}table{border-collapse:collapse;width:100%}td,th{border:1px solid #999;padding:5pt;vertical-align:top;font-size:10pt}th{background:#eee}.c{color:#555;font-size:10pt}mark{background:#fde68a}</style>';
 function wrapDoc(b){return `<html><head><meta charset="utf-8">${DOCCSS}</head><body>${b}<p class="c">© 선민서 · 고려대학교 학부대학 글쓰기 수업용 개인 제작 자료</p></body></html>`}
 function revTable(D){return `<table><tr><th>순서</th><th>원래 단락</th><th>작업</th><th>역할</th><th>수정 후 요지</th><th>이유</th></tr>${(D.rev||[]).map((r,i)=>`<tr><td>${i+1}</td><td>${r.from===null?'새 단락':r.from+1}</td><td>${esc(r.op)}</td><td>${esc(r.role)}</td><td>${esc(r.gist)}</td><td>${esc(r.why)}</td></tr>`).join('')}</table><p><b>연결 보완:</b> ${esc(D.revLogic)}</p><p><b>수정 판단의 이유:</b> ${esc(D.revReason)}</p>`}
-function portfolioBody(D,X){
+function portfolioBody(D,X,DRR){
+ DRR=(DRR||[]).filter(r=>r.summary&&r.summary.submitted);
  const owner=X.project.owner;
  const body=D.paras.map((p,i)=>{let t=esc(p.text);X.comments.filter(c=>c.p===i).forEach((c,k)=>{t=t.replace(esc(c.quote),`<mark>${esc(c.quote)}</mark><sup>[${i+1}-${k+1}]</sup>`)});return `<p><b>${i+1}</b> ${t}</p>`}).join('');
  const an=D.paras.map((p,i)=>`<tr><td>${i+1}</td><td>${esc(p.role)}<br><span class="c">${esc(p.rel)}</span></td><td>${esc(p.gist)}</td>${AN.map(([k])=>`<td>${esc(p.an&&p.an[k])}</td>`).join('')}</tr>`).join('');
@@ -796,20 +956,21 @@ function portfolioBody(D,X){
  return `<h1>${esc(D.title)}</h1><p>작성자: ${esc(D.author)} · 상태: ${esc(D.status)}<br>중심 주장: ${esc(D.thesis)}</p>
  <h2>1. 본문 (메모 위치 표시)</h2>${body}
  <h2>2. 단락 요지와 논증 요소</h2><table><tr><th>단락</th><th>역할·관계</th><th>주장(요지)</th>${AN.map(a=>`<th>${a[1]}</th>`).join('')}</tr>${an}</table>
- <h2>3. 역개요 진단</h2>${OUTQ.map((qq,i)=>`<p class="c">${qq}</p><p>${esc(D.outline[i])}</p>`).join('')}
+ <h2>3. 역개요 진단</h2>${OUTQ.map((qq,i)=>`<p class="c">${qq}</p><p>${esc(D.outline[i])}</p>`).join('')}<p><b>자가 점검</b></p><table><tr><th>점검 질문</th><th>답</th><th>문제와 고칠 방향</th></tr>${selfQs().map(([id,qq])=>{const x=(D.selfchk||{})[id]||{};return `<tr><td>${qq}</td><td>${({yes:'그렇다',part:'부분적으로',no:'아니다'})[x.r]||''}</td><td>${esc(x.n||'')}</td></tr>`}).join('')}</table>
  <h2>4. AI 조언과 나의 판단</h2>${ai||'<p class="c">없음</p>'}<p><b>원문 대조 추가 발견:</b> ${esc(D.aiExtra)}</p>
  <h2>5. 메모와 답변</h2><table><tr><th>번호</th><th>유형</th><th>작성</th><th>내용</th><th>작성자 답변</th></tr>${cm}</table>
  <h2>6. 종합 피드백과 답변</h2>${fb||'<p class="c">없음</p>'}
  ${R.length?`<h2>7. 독자 요지 비교</h2><table><tr><th>단락</th><th>작성자 요지</th>${R.map(r=>`<th>${esc(nameOf(r))}</th>`).join('')}</tr>${D.paras.map((p,i)=>`<tr><td>${i+1}</td><td>${esc(p.gist)}</td>${R.map(r=>`<td>${esc(rd(r,i))}</td>`).join('')}</tr>`).join('')}</table>`:''}
- <h2>8. 수정개요</h2>${revTable(D)}
- <h2>9. 학습 성찰</h2>${REFQ.map((qq,i)=>`<p class="c">${i+1}. ${qq}</p><p>${esc(D.reflect[i])}</p>`).join('')}`;
+ <h2>8. 초고 동료 검토 (전체 원고)</h2>${DRR.length?DRR.map(drDoc).join(''):'<p class="c">없음</p>'}
+ <h2>9. 수정개요</h2>${revTable(D)}
+ <h2>10. 학습 성찰</h2>${REFQ.map((qq,i)=>`<p class="c">${i+1}. ${qq}</p><p>${esc(D.reflect[i])}</p>`).join('')}`;
 }
-function dlPortfolio(X){X=X&&X.project?X:MY;const D=X===MY?S:Object.assign(blankData(),X.project.data);dl(`학습기록_${D.author||'작성자'}.doc`,wrapDoc(portfolioBody(D,X)),'application/msword')}
+function dlPortfolio(X){X=X&&X.project?X:MY;const D=X===MY?S:Object.assign(blankData(),X.project.data);const DRR=X===MY?MYDR.received:(TD&&TD.dr||[]).filter(r=>r.author===X.project.owner);dl(`학습기록_${D.author||'작성자'}.doc`,wrapDoc(portfolioBody(D,X,DRR)),'application/msword')}
 function dlRev(){dl(`수정개요_${S.author||'작성자'}.doc`,wrapDoc(`<h1>수정개요</h1><p>제목: ${esc(S.title)}<br>작성자: ${esc(S.author)}<br>중심 주장: ${esc(S.thesis)}</p>${revTable(S)}`),'application/msword')}
 function dlTxt(){dl(`${S.title||'본문'}.txt`,S.title+'\n'+S.author+'\n\n'+S.paras.map(p=>p.text).join('\n\n'),'text/plain;charset=utf-8')}
 
 /* ================= 렌더 ================= */
-const VIEWS=[step0,step1,step2,step3,step4,step5,step6,step7,step8,step9,step10];
+const VIEWS=[step0,step1,step2,step3,step4,step5,step6,step7,step8,stepDraft,stepRev,stepRef];
 function render(){
  if(!ME)return;
  renderWho();renderNav();

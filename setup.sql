@@ -217,3 +217,55 @@ create policy reader_ins on public.reader for insert to authenticated
 drop policy if exists reader_upd on public.reader;
 create policy reader_upd on public.reader for update to authenticated
   using (reviewer = auth.uid()) with check (reviewer = auth.uid());
+
+-- ---------------------------------------------------------------------
+-- 초고 동료 검토 (2026-11 추가)
+-- ---------------------------------------------------------------------
+create table if not exists public.draft_reviews(
+  id uuid primary key default gen_random_uuid(),
+  author uuid not null references public.profiles(id) on delete cascade,
+  reviewer uuid not null references public.profiles(id) on delete cascade,
+  answers jsonb not null default '{}'::jsonb,
+  summary jsonb not null default '{}'::jsonb,
+  resp jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique(author, reviewer)
+);
+create or replace function public.draft_review_guard() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() = old.reviewer then
+    new.resp := old.resp;
+  elsif auth.uid() = old.author then
+    new.answers := old.answers; new.summary := old.summary;
+  end if;
+  new.author := old.author; new.reviewer := old.reviewer; new.updated_at := now();
+  return new;
+end $$;
+drop trigger if exists draft_review_guard on public.draft_reviews;
+create trigger draft_review_guard before update on public.draft_reviews
+  for each row execute function public.draft_review_guard();
+create or replace function public.review_counts() returns table(author uuid, n bigint)
+language sql stable security definer set search_path = public as $$
+  select p.id, count(r.id) from public.profiles p
+  left join public.draft_reviews r on r.author = p.id and coalesce((r.summary->>'submitted')::boolean, false)
+  where p.role = 'student' and p.class_code = public.my_class()
+  group by p.id;
+$$;
+grant select, insert, update, delete on public.draft_reviews to authenticated;
+grant execute on function public.review_counts() to authenticated;
+alter table public.draft_reviews enable row level security;
+drop policy if exists dr_sel on public.draft_reviews;
+create policy dr_sel on public.draft_reviews for select to authenticated
+  using (reviewer = auth.uid() or author = auth.uid() or public.is_teacher());
+drop policy if exists dr_ins on public.draft_reviews;
+create policy dr_ins on public.draft_reviews for insert to authenticated
+  with check (reviewer = auth.uid() and author <> auth.uid()
+    and exists(select 1 from public.profiles p where p.id = author and p.role = 'student' and p.class_code = public.my_class()));
+drop policy if exists dr_upd on public.draft_reviews;
+create policy dr_upd on public.draft_reviews for update to authenticated
+  using (reviewer = auth.uid() or author = auth.uid());
+drop policy if exists dr_del on public.draft_reviews;
+create policy dr_del on public.draft_reviews for delete to authenticated
+  using (reviewer = auth.uid() or public.is_teacher());
