@@ -223,7 +223,7 @@ function doneFlags(D,X,rev){
  const P=D.paras||[],pts=(D.ai||[]).filter(e=>!e.refusal).flatMap(e=>e.points);
  const need=(X?X.comments:[]).filter(c=>c.tag!=='잘된 점'),fb=X?X.feedback:[];
  return [!!D.intro,P.length>=2&&len(D.thesis)>=10,P.length>0&&P.every(p=>gistState(p).ok),P.length>0&&P.every(anOK),(D.outline||[]).every(r=>len(r)>=20),
-  pts.length>0,pts.length>0&&pts.every(p=>p.verdict&&len(p.reason)>=20),rev>0,(need.length+fb.length)>0&&need.every(c=>respOK(c.resp))&&fb.every(f=>respOK(f.resp)),
+  pts.length>0,pts.length>0&&pts.every(p=>p.verdict&&len(p.reason)>=20&&(p.verdict==='거부'||len(p.plan)>=10)),rev>0,(need.length+fb.length)>0&&need.every(c=>respOK(c.resp))&&fb.every(f=>respOK(f.resp)),
   (D.rev||[]).length>=2&&D.rev.every(r=>len(r.gist)>=10||r.op==='삭제')&&len(D.revReason)>=20,D.status==='제출 완료'];
 }
 const stepDone=i=>!!S&&doneFlags(S,MY,MYREV.n)[i];
@@ -425,21 +425,70 @@ function step4(){
 function payload(type,qq){
  return `[중심 주장]\n${S.thesis}\n\n[단락별 분석 — 학생이 직접 쓴 요약]\n`+S.paras.map((p,i)=>`${i+1}. (${p.role}${i>0&&p.rel?' | 앞 단락과: '+p.rel:''})\n   주장(요지): ${p.gist}\n`+AN.map(([k,l])=>`   ${l}: ${p.an[k]||'-'}`).join('\n')).join('\n')+`\n\n[학생의 현재 구조 진단]\n${S.outline.map(x=>'- '+cut(x,80)).join('\n')}\n\n[질문 유형] ${type}\n[학생 질문] ${qq||'(아직 없음)'}\n\n※ 본문은 전송되지 않습니다.`;
 }
-function canAsk(){if(S.ai.length>=AI_MAX)return false;const l=S.ai[S.ai.length-1];return !l||l.refusal||l.points.every(p=>p.verdict&&len(p.reason)>=20)}
+const ptOK=p=>p.verdict&&len(p.reason)>=20&&(p.verdict==='거부'||len(p.plan)>=10);
+function canAsk(){if(S.ai.length>=AI_MAX)return false;const l=S.ai[S.ai.length-1];return !l||l.refusal||l.points.every(ptOK)}
+function extPrompt(qq){return `당신은 대학 글쓰기 수업의 논증 구조 검토자입니다. 아래는 학생이 자기 글을 직접 요약·분석한 내용이며, 글 원문은 제공되지 않습니다.
+규칙:
+1) 글을 대신 쓰거나 고친 문장을 제시하지 마세요.
+2) 원문을 보지 못했으므로 단정하지 말고, 학생이 원문에서 확인해야 할 질문 형태로 지적하세요.
+3) 가장 중요한 논리적 문제 3가지만, 번호를 붙이고 해당 단락 번호와 함께 쓰세요.
+4) 각 지적은 3문장 이내로 쓰세요.
+
+`+payload('외부 AI 검토',qq)}
 function step5(){
  if(locked(5))return head(5)+`<div class="notice w">🔒 이 단계는 <b>중심 주장</b>, <b>모든 단락의 요지</b>, <b>논증 요소 분석</b>을 완성해야 열립니다. AI는 여러분의 글 전문을 받지 않고 여러분이 쓴 분석만 받기 때문에, 분석이 부실하면 AI의 조언도 부실해집니다.</div><div class="row"><button class="btn p" onclick="go(2)">2단계로</button><button class="btn" onclick="go(3)">3단계로</button></div>`;
- const left=AI_MAX-S.ai.length,ok=canAsk(),last=S.ai[S.ai.length-1];
- return head(5,`<p>AI는 <b>글 전문을 받지 않습니다</b>. 여러분이 쓴 중심 주장·요지·논증 요소·구조 진단만 받습니다. AI는 원문을 보지 못했으므로 오류를 단정하지 않고, <b>원문에서 확인할 질문</b>만 돌려줍니다. 문장을 대신 쓰거나 고쳐 달라는 요청은 거절합니다.</p>`)+`
- <div class="notice a">⚠️ 현재 버전의 AI 질문은 여러분의 분석을 규칙에 따라 점검해 만든 <b>질문 생성기</b>입니다. 실제 AI 연결은 다음 단계에서 붙일 예정이며, 같은 제한(본문 차단·대필 거부·판단 의무)이 그대로 적용됩니다.</div>
- <div class="card"><h3>AI에게 물을 질문</h3>
-  <div class="row"><div style="flex:1;min-width:200px"><label class="f" style="margin-top:0">질문 유형</label><select class="t" id="aitype" onchange="$('#pl').textContent=payload(this.value,$('#aiq').value)"><option>전제</option><option>반론</option><option>연결</option><option>자유 질문</option></select></div><div class="hint" style="align-self:flex-end">남은 질문 ${left}/${AI_MAX}회</div></div>
-  <label class="f">질문 (200자 이내, 붙여 넣기 불가)</label>
-  <textarea class="t" id="aiq" rows="3" maxlength="200" placeholder="예: 3단락의 요지에서 중심 주장으로 가려면 어떤 전제가 필요할까?" oninput="$('#pl').textContent=payload($('#aitype').value,this.value)" onpaste="blockPaste(event,'질문은 붙여 넣을 수 없습니다. 본문 문장도 AI에 보낼 수 없습니다.')" ondrop="event.preventDefault()"></textarea>
-  <label class="f">AI에게 실제로 보내지는 내용</label><div class="payload" id="pl">${esc(payload('전제',''))}</div>
-  <div class="row" style="margin-top:10px"><button class="btn p" id="askbtn" ${ok?'':'disabled'} onclick="askAI()">AI에게 묻기</button>${!ok&&left>0?'<span class="hint">앞선 AI 지적을 6단계에서 모두 판단해야 다음 질문을 할 수 있습니다.</span>':''}${left<=0?'<span class="hint">질문 횟수를 모두 썼습니다.</span>':''}</div>
+ const left=AI_MAX-S.ai.length,ok=canAsk(),last=S.ai[S.ai.length-1],m=UI.aimode||'ext',n=S.paras.length;
+ const blocked=!ok&&left>0?'<div class="notice w">앞선 AI 지적을 6단계에서 모두 판단해야 다음 질문을 할 수 있습니다.</div>':left<=0?'<div class="notice w">질문 횟수를 모두 썼습니다.</div>':'';
+ const pSel=(j)=>`<select class="t" id="ex_p${j}" style="width:auto"><option value="">관련 단락</option><option value="all">전체</option>${S.paras.map((_,i)=>`<option value="${i}">${i+1}단락</option>`).join('')}</select>`;
+ return head(5,`<p>AI는 <b>글 전문을 받지 않습니다</b>. 여러분이 쓴 중심 주장·요지·논증 요소·구조 진단만 받습니다. AI는 원문을 보지 못했으므로 그 지적은 틀릴 수 있습니다.</p><p><b>AI의 말을 복사해 붙이지 않습니다.</b> AI의 답을 읽고 생각한 뒤, 각 지적이 무슨 뜻인지 <b>자기 말로 요약</b>해 옮깁니다. 요약할 수 없는 지적은 아직 이해하지 못한 지적입니다. 그다음 6단계에서 원문과 대조해 수용·부분 수용·거부를 판단하고, 받아들인 지적은 어떻게 반영할지 씁니다.</p>`,true)+`
+ <div class="tabs"><button class="${m==='ext'?'on':''}" onclick="UI.aimode='ext';render()">🤖 내가 쓰는 AI에게 묻기 (무료)</button><button class="${m==='gen'?'on':''}" onclick="UI.aimode='gen';render()">🧩 내장 질문 생성기</button></div>
+ <div class="hint" style="margin:-6px 0 12px">남은 질문 ${left}/${AI_MAX}회 (두 방식 합산)</div>${blocked}
+ ${m==='ext'?`
+ <div class="card"><h3>① 질문문 만들기</h3>
+  <label class="f">AI에게 묻고 싶은 것 (200자 이내, 붙여 넣기 불가)</label>
+  <textarea class="t" id="aiq" rows="2" maxlength="200" placeholder="예: 3단락의 요지에서 중심 주장으로 가려면 어떤 전제가 필요할까?" oninput="$('#pl').textContent=extPrompt(this.value)" onpaste="blockPaste(event,'질문은 직접 쓰세요. 본문 문장도 AI에 보낼 수 없습니다.')" ondrop="event.preventDefault()"></textarea>
+  <label class="f">AI에게 보낼 질문문 (본문 없이 내 분석만 들어 있음)</label><div class="payload" id="pl">${esc(extPrompt(''))}</div>
+  <div class="row" style="margin-top:10px"><button class="btn p" ${ok?'':'disabled'} onclick="copyPrompt()">📋 질문문 복사</button><span class="hint">ChatGPT·Claude·Gemini 등 평소 쓰는 AI 대화창에 붙여 넣으세요.</span></div>
  </div>
- ${last?`<div class="ai"><div class="q">가장 최근 응답 · Q${S.ai.length}. [${esc(last.type)}] ${esc(last.q)}</div>${last.points.map(pt=>`<div class="pt"><div class="tx">${esc(pt.text)}</div></div>`).join('')}
-  ${last.refusal?'':`<div class="row"><button class="btn p" onclick="go(6)">6단계에서 이 조언 검토하기 →</button></div>`}</div>`:''}<div class="row" style="margin-top:18px"><button class="btn" onclick="go(4)">← 이전</button></div>`;
+ <div class="card"><h3>② AI의 지적을 내 말로 요약하기</h3>
+  <div class="notice a">AI 답을 <b>그대로 옮겨 적지 마세요.</b> 끝까지 읽고 생각한 뒤, AI 창을 닫거나 내려 두고 <b>기억나는 핵심을 내 말로</b> 쓰세요. 이 칸은 붙여 넣기가 되지 않습니다. 지적이 3개보다 적으면 나머지 칸은 비워 둡니다.</div>
+  <div class="row"><label class="f" style="margin:0">사용한 AI</label><select class="t" id="ex_tool" style="width:auto"><option>ChatGPT</option><option>Claude</option><option>Gemini</option><option>기타</option></select></div>
+  ${[0,1,2].map(j=>`<label class="f">AI 지적 ${j+1} — 무엇이 왜 문제라고 했는가 (내 말로)</label><div class="row" style="align-items:flex-start">${pSel(j)}<textarea class="t" id="ex_t${j}" rows="2" maxlength="200" style="flex:1;min-width:220px" placeholder="예: 2단락에서 ‘반복되면 능력을 잃는다’는 건 확인 안 된 예측이라 근거가 필요하다고 함" ${NP}></textarea></div>`).join('')}
+  <label class="hint" style="display:block;margin-top:10px"><input type="checkbox" id="ex_ok"> AI의 문장을 옮겨 적지 않고, 이해한 내용을 내 말로 요약했습니다.</label>
+  <div class="row" style="margin-top:10px"><button class="btn p" ${ok?'':'disabled'} onclick="saveExt()">요약 저장하고 6단계에서 판단하기 →</button></div>
+ </div>`:`
+ <div class="card"><h3>내장 질문 생성기</h3><p class="hint">여러분의 분석을 규칙에 따라 점검해 질문을 만듭니다. 실제 AI는 아니며, 외부 AI를 쓸 수 없을 때 사용합니다.</p>
+  <div class="row"><div style="flex:1;min-width:200px"><label class="f" style="margin-top:0">질문 유형</label><select class="t" id="aitype" onchange="$('#pl').textContent=payload(this.value,$('#aiq').value)"><option>전제</option><option>반론</option><option>연결</option><option>자유 질문</option></select></div></div>
+  <label class="f">질문 (200자 이내, 붙여 넣기 불가)</label>
+  <textarea class="t" id="aiq" rows="3" maxlength="200" placeholder="예: 3단락의 요지에서 중심 주장으로 가려면 어떤 전제가 필요할까?" oninput="$('#pl').textContent=payload($('#aitype').value,this.value)" onpaste="blockPaste(event,'질문은 붙여 넣을 수 없습니다.')" ondrop="event.preventDefault()"></textarea>
+  <label class="f">점검에 쓰이는 내용</label><div class="payload" id="pl">${esc(payload('전제',''))}</div>
+  <div class="row" style="margin-top:10px"><button class="btn p" id="askbtn" ${ok?'':'disabled'} onclick="askAI()">질문 받기</button></div>
+ </div>
+ ${last&&!last.ext?`<div class="ai"><div class="q">가장 최근 응답 · Q${S.ai.length}. [${esc(last.type)}] ${esc(last.q)}</div>${last.points.map(pt=>`<div class="pt"><div class="tx">${esc(pt.text)}</div></div>`).join('')}
+  ${last.refusal?'':`<div class="row"><button class="btn p" onclick="go(6)">6단계에서 검토하기 →</button></div>`}</div>`:''}`}
+ <div class="row" style="margin-top:18px"><button class="btn" onclick="go(4)">← 이전</button>${S.ai.length?'<button class="btn" onclick="go(6)">6단계: AI 조언 검토 →</button>':''}</div>`;
+}
+function qOverlap(qq){const nq=norm(qq),nd=norm(S.paras.map(p=>p.text).join(''));for(let i=0;i+12<=nq.length;i++){if(nd.includes(nq.slice(i,i+12)))return true}return false}
+async function copyPrompt(){
+ const qq=$('#aiq').value.trim();
+ if(qq.length<5)return toast('AI에게 묻고 싶은 것을 5자 이상 쓰세요.');
+ if(qOverlap(qq))return toast('질문에 본문 문장이 들어 있습니다. 본문은 AI에 보낼 수 없습니다. 단락 번호로 가리켜 물어보세요.');
+ const t=extPrompt(qq);
+ try{await navigator.clipboard.writeText(t);toast('복사했습니다. AI 대화창에 붙여 넣으세요.')}
+ catch(e){const r=document.createRange();r.selectNodeContents($('#pl'));getSelection().removeAllRanges();getSelection().addRange(r);toast('자동 복사가 안 됩니다. 선택된 글을 길게 눌러 복사하세요.')}
+ S._lastQ=qq;save();
+}
+function saveExt(){
+ const qq=($('#aiq').value.trim())||S._lastQ||'';
+ if(qq.length<5)return toast('먼저 ①에서 질문을 쓰고 질문문을 복사해 AI에게 물어보세요.');
+ const pts=[0,1,2].map(j=>({t:$('#ex_t'+j).value.trim(),p:$('#ex_p'+j).value})).filter(x=>x.t);
+ if(!pts.length)return toast('AI의 지적을 하나 이상 내 말로 요약하세요.');
+ if(pts.some(x=>x.t.length<15))return toast('각 지적을 15자 이상, 무엇이 왜 문제인지 드러나게 요약하세요.');
+ if(!$('#ex_ok').checked)return toast('내 말로 요약했는지 확인란에 체크하세요.');
+ const tool=$('#ex_tool').value;
+ S.ai.push({id:uid(),type:'외부 AI · '+tool,q:qq,ext:true,tool,refusal:false,at:new Date().toISOString(),
+  points:pts.map(x=>({p:x.p===''||x.p==='all'?null:+x.p,text:x.t,verdict:'',reason:'',plan:''}))});
+ delete S._lastQ;save();go(6);
 }
 function askAI(){
  const qq=$('#aiq').value.trim(),type=$('#aitype').value;
@@ -466,17 +515,19 @@ function mock(type,qq){
 /* ================= 6. AI 조언 검토 ================= */
 function step6(){
  if(locked(6))return head(6)+`<div class="notice w">🔒 먼저 5단계에서 AI에게 질문하세요.</div><button class="btn p" onclick="go(5)">5단계로</button>`;
- return head(6,`<p>AI의 지적은 <b>정답이 아니라 가설</b>입니다. 본문을 본 적 없는 AI는 틀릴 수 있습니다. 각 지적을 <b>원문과 대조한 뒤</b> 수용·부분 수용·거부 중 하나로 판단하고, 내 글의 어느 부분 때문에 그렇게 판단했는지 근거를 쓰세요. 근거가 분명하다면 거부도 좋은 판단입니다.</p>`,true)+`
+ return head(6,`<p>AI의 지적은 <b>정답이 아니라 가설</b>입니다. 본문을 본 적 없는 AI는 틀릴 수 있습니다. 각 지적을 <b>원문과 대조한 뒤</b> 수용·부분 수용·거부 중 하나로 판단하고, 내 글의 어느 부분 때문에 그렇게 판단했는지 근거를 쓰세요. 근거가 분명하다면 거부도 좋은 판단입니다.</p><p>수용하거나 부분 수용한 지적은 <b>내 글에 어떻게 반영할지</b>까지 씁니다. 이 내용은 9단계 수정개요로 이어집니다.</p>`,true)+`
  ${S.ai.map((e,k)=>`<div class="ai"><div class="q">Q${k+1}. [${esc(e.type)}] ${esc(e.q)} <span class="hint">· ${esc(fmt(e.at))}</span></div>
-  ${e.points.map((pt,j)=>`<div class="pt"><div class="tx">${esc(pt.text)}</div>
+  ${e.ext?'<div class="hint" style="margin-bottom:4px">아래는 AI의 답을 내가 요약한 것입니다.</div>':''}
+  ${e.points.map((pt,j)=>`<div class="pt"><div class="tx ${e.ext?'ext':''}">${pt.p!==null&&pt.p!==undefined?`<b>${pt.p+1}단락</b> · `:''}${esc(pt.text)}</div>
    ${e.refusal?'<div class="hint">대필 요청이 거절되었습니다. 판단할 필요가 없습니다.</div>':`${radios(`v${k}_${j}`,pt.verdict,`(v=>judge(${k},${j},'verdict',v))`)}
    <textarea class="t" rows="2" placeholder="판단 근거 (20자 이상): 원문의 어느 부분 때문에 이 지적이 맞거나 틀렸는가?" oninput="judge(${k},${j},'reason',this.value)" ${NP}>${esc(pt.reason)}</textarea>
-   <div class="hint" id="jl${k}_${j}">${len(pt.reason)}/20자</div>`}
+   <div class="hint" id="jl${k}_${j}">${len(pt.reason)}/20자</div>
+   ${pt.verdict&&pt.verdict!=='거부'?`<label class="f">반영 방법 (10자 이상): 내 글의 어디를 어떻게 고칠 것인가?</label><textarea class="t" rows="2" oninput="judge(${k},${j},'plan',this.value)" ${NP}>${esc(pt.plan||'')}</textarea>`:''}`}
   </div>`).join('')}</div>`).reverse().join('')}
- <div class="card"><h3>원문과 대조해 추가로 발견한 점</h3><p class="hint">AI가 묻지 않았지만, 원문을 다시 읽으며 새로 찾은 문제를 쓰세요.</p><textarea class="t" rows="3" oninput="S.aiExtra=this.value;save()" ${NP}>${esc(S.aiExtra)}</textarea></div>
+ <div class="card"><h3>원문과 대조해 추가로 발견한 점</h3><p class="hint">AI가 짚지 않았지만, 원문을 다시 읽으며 새로 찾은 문제를 쓰세요.</p><textarea class="t" rows="3" oninput="S.aiExtra=this.value;save()" ${NP}>${esc(S.aiExtra)}</textarea></div>
  <div class="row">${canAsk()?'<button class="btn" onclick="go(5)">← AI에게 다른 질문하기</button>':''}</div>`+nextBtn(6);
 }
-function judge(k,j,f,v){S.ai[k].points[j][f]=v;save();if(f==='reason'){const l=$('#jl'+k+'_'+j);if(l)l.textContent=len(v)+'/20자'}renderNav()}
+function judge(k,j,f,v){S.ai[k].points[j][f]=v;save();if(f==='verdict')return render();if(f==='reason'){const l=$('#jl'+k+'_'+j);if(l)l.textContent=len(v)+'/20자'}renderNav()}
 
 /* ================= 공통: 문서·메모 보기 ================= */
 function paraHTML(ctx,i){
@@ -635,7 +686,7 @@ function applyItems(){
  const out=[],acc=v=>['수용','부분 수용'].includes(v);
  MY.comments.forEach(c=>{if(c.resp&&acc(c.resp.verdict))out.push({key:'c'+c.id,src:'메모 · '+(c.auto?'표현 점검':nameOf(c.author)),p:c.p,tag:c.tag,v:c.resp.verdict,text:c.resp.plan})});
  MY.feedback.forEach(f=>{if(f.resp&&acc(f.resp.verdict))out.push({key:'f'+f.id,src:'종합 피드백 · '+nameOf(f.reviewer),p:null,tag:'종합',v:f.resp.verdict,text:f.resp.plan})});
- S.ai.forEach((e,k)=>{if(!e.refusal)e.points.forEach((pt,j)=>{if(acc(pt.verdict))out.push({key:`a${k}_${j}`,src:'AI 질문',p:pt.p,tag:'AI',v:pt.verdict,text:pt.reason})})});
+ S.ai.forEach((e,k)=>{if(!e.refusal)e.points.forEach((pt,j)=>{if(acc(pt.verdict))out.push({key:`a${k}_${j}`,src:e.ext?'AI 지적 · '+(e.tool||'외부 AI'):'질문 생성기',p:pt.p,tag:'AI',v:pt.verdict,text:pt.plan||pt.reason})})});
  S.paras.forEach((p,i)=>{const R=MY.reader.filter(r=>r.p===i&&len(r.text));if(R.length&&Math.min(...R.map(r=>jacc(p.gist,r.text)))<0.18)out.push({key:'r'+i,src:'독자 요지 비교',p:i,tag:'다르게 읽힘',v:'',text:'독자가 이 단락의 요지를 의도와 다르게 읽음'})});
  return out;
 }
@@ -741,7 +792,7 @@ function portfolioBody(D,X){
  const cm=X.comments.map(c=>{const k=X.comments.filter(x=>x.p===c.p).indexOf(c)+1,rl=roleOf(c,owner);return `<tr><td>[${c.p+1}-${k}]</td><td>${esc(c.tag)}</td><td>${c.auto?'표현 점검':esc(nameOf(c.author))} (${RLABEL[rl]})</td><td>“${esc(c.quote)}”<br>${esc(c.body)}${X.replies.filter(r=>r.comment===c.id).map(r=>`<br>↳ ${esc(nameOf(r.author))}: ${esc(r.body)}`).join('')}</td><td>${c.resp&&c.resp.verdict?`[${esc(c.resp.verdict)}] ${esc(c.resp.plan)}`:''}</td></tr>`}).join('');
  const fb=X.feedback.map(f=>`<p><b>${esc(nameOf(f.reviewer))}</b><br>${FBQ.map(([k,qq])=>`${qq}<br>→ ${esc(f[k])}`).join('<br>')}<br><b>답변:</b> ${f.resp&&f.resp.verdict?`[${esc(f.resp.verdict)}] ${esc(f.resp.plan)}`:'(미작성)'}</p>`).join('');
  const R=readerNames(X),rd=(id,i)=>{const r=X.reader.find(x=>x.reviewer===id&&x.p===i);return r?r.text:''};
- const ai=D.ai.map((e,k)=>`<p><b>Q${k+1} [${esc(e.type)}]</b> ${esc(e.q)}</p>`+e.points.map(pt=>`<p class="c">AI: ${esc(pt.text)}<br><b>판단: ${esc(pt.verdict||'-')}</b> — ${esc(pt.reason)}</p>`).join('')).join('');
+ const ai=D.ai.map((e,k)=>`<p><b>Q${k+1} [${esc(e.type)}]</b> ${esc(e.q)}</p>`+e.points.map(pt=>`<p class="c">${e.ext?'AI 지적(내 요약)':'질문'}: ${esc(pt.text)}<br><b>판단: ${esc(pt.verdict||'-')}</b> — ${esc(pt.reason)}${pt.plan?`<br>반영: ${esc(pt.plan)}`:''}</p>`).join('')).join('');
  return `<h1>${esc(D.title)}</h1><p>작성자: ${esc(D.author)} · 상태: ${esc(D.status)}<br>중심 주장: ${esc(D.thesis)}</p>
  <h2>1. 본문 (메모 위치 표시)</h2>${body}
  <h2>2. 단락 요지와 논증 요소</h2><table><tr><th>단락</th><th>역할·관계</th><th>주장(요지)</th>${AN.map(a=>`<th>${a[1]}</th>`).join('')}</tr>${an}</table>

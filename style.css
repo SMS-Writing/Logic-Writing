@@ -196,3 +196,4 @@ render();
 .toggle input{width:18px;height:18px}
 .demo{white-space:nowrap}
 @media(max-width:640px){header{flex-wrap:wrap;gap:6px 12px;padding:8px 12px}header .who{margin-left:0;width:100%;flex-wrap:wrap}header .who>.hint{display:none}header .brand b{white-space:nowrap}}
+.pt .tx.ext::before{content:"AI 지적 · 내 요약";background:var(--info)}
