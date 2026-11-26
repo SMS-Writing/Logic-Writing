@@ -194,3 +194,5 @@ render();
 .back{background:none;border:0;color:var(--info);cursor:pointer;padding:0;margin-bottom:10px;font-size:14px}
 .toggle{display:flex;gap:8px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:14px}
 .toggle input{width:18px;height:18px}
+.demo{white-space:nowrap}
+@media(max-width:640px){header{flex-wrap:wrap;gap:6px 12px;padding:8px 12px}header .who{margin-left:0;width:100%;flex-wrap:wrap}header .who>.hint{display:none}header .brand b{white-space:nowrap}}
