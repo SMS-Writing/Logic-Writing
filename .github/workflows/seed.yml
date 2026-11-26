@@ -1,0 +1,24 @@
+name: seed-demo
+on:
+  push:
+    paths: ['seed/RUN']
+permissions:
+  contents: write
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('seed/RUN') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: node seed/seed.mjs
+      - name: 계정 정보를 암호화해 저장
+        if: always()
+        run: |
+          if [ -f seed/creds.txt ]; then
+            openssl pkeyutl -encrypt -pubin -inkey seed/pub.pem -pkeyopt rsa_padding_mode:oaep -in seed/creds.txt | base64 -w0 > seed/creds.enc
+            rm seed/creds.txt
+            git config user.name github-actions && git config user.email actions@github.com
+            git add seed/creds.enc && git commit -m "예시 계정 정보(암호화) [skip ci]" && git push
+          fi
