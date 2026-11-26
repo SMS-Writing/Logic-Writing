@@ -77,6 +77,6 @@ await call('/rest/v1/feedback', { token: b.token, prefer: 'return=minimal', body
 // 학생 A의 답글 하나
 const cs = await call(`/rest/v1/comments?project=eq.${pa.id}&select=id,tag&order=created_at`, { method: 'GET', token: a.token });
 await call('/rest/v1/replies', { token: a.token, prefer: 'return=minimal', body: { comment: cs[0].id, author: a.uid, body: '맞아요, 출처를 찾아보고 없으면 표현을 낮추겠습니다.' } });
-const out = `학생 A(글 작성): ${a.email} / ${a.password}\n학생 B(피드백): ${b.email} / ${b.password}\n`;
+const out = `A ${a.email} ${a.password}\nB ${b.email} ${b.password}\n`;
 writeFileSync('seed/creds.txt', out);
 console.log('완료: 계정 2개, 메모', C.length, '개, 독자 요지', R.length, '개, 종합 피드백 1개');
