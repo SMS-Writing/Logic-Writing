@@ -33,7 +33,7 @@ const ABS=/(모든|항상|반드시|전혀|절대|누구나|무조건|완전히|
 
 /* ================= 상태 ================= */
 const CFG=window.AIDT_CONFIG||{};
-const LIVE=!!(CFG.supabaseUrl&&CFG.supabaseAnonKey&&/^https:\/\//.test(CFG.supabaseUrl));
+const LIVE=!!(CFG.supabaseUrl&&CFG.supabaseAnonKey&&/^https:\/\//.test(CFG.supabaseUrl))&&!/[?&]demo\b/.test(location.search);
 const DKEY='aidt-demo-v3';
 let db=null,ME=null,PEOPLE={},MYP=null,S=null,MY=null,VIEW=null,CUR=null,PEERS=[],MYREV={fb:new Set(),cm:new Set(),n:0},TD=null,CLASSES=[];
 const UI={tab7:'doc',tab8:'memo',tabT:'rec',tpage:'dash',tclass:'',sel:null,pending:null,showResolved:false,focusC:null,auth:'login'};
