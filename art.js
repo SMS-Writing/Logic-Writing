@@ -33,10 +33,10 @@ const ART = (() => {
    <path d="M22 42 H58 M22 52 H48" stroke="#c9a4b0" stroke-width="4"/>
    <path d="M54 56 H100 a7 7 0 0 1 7 7 V82 a7 7 0 0 1 -7 7 H96 V98 L86 89 H54 a7 7 0 0 1 -7 -7 V63 a7 7 0 0 1 7 -7 Z" fill="${G}"/>
    <path d="M60 68 H96 M60 77 H84" stroke="#9a0f35" stroke-width="4"/>`,
-  8: disc + `<path d="M24 28 H86 a8 8 0 0 1 8 8 V64 a8 8 0 0 1 -8 8 H56 L40 86 V72 H24 a8 8 0 0 1 -8 -8 V36 a8 8 0 0 1 8 -8 Z" fill="${W}"/>
+  9: disc + `<path d="M24 28 H86 a8 8 0 0 1 8 8 V64 a8 8 0 0 1 -8 8 H56 L40 86 V72 H24 a8 8 0 0 1 -8 -8 V36 a8 8 0 0 1 8 -8 Z" fill="${W}"/>
    <path d="M38 50 L50 62 L74 38" stroke="#1f8a5b" stroke-width="7"/>
    <path d="M100 74 a18 18 0 0 1 -26 18" stroke="${G}" stroke-width="5"/><path d="M78 84 L72 93 L82 96" stroke="${G}" stroke-width="5"/>`,
-  9: disc + `<rect x="30" y="22" width="60" height="76" rx="8" fill="${W}"/><rect x="46" y="16" width="28" height="12" rx="4" fill="${G}"/>
+  8: disc + `<rect x="30" y="22" width="60" height="76" rx="8" fill="${W}"/><rect x="46" y="16" width="28" height="12" rx="4" fill="${G}"/>
    <path d="M40 46 l5 5 9 -10 M40 64 l5 5 9 -10 M40 82 l5 5 9 -10" stroke="#1f8a5b" stroke-width="4"/>
    <path d="M62 47 H80 M62 65 H80 M62 83 H74" stroke="#c9a4b0" stroke-width="4"/>`,
   10: disc + `<rect x="18" y="26" width="84" height="66" rx="8" fill="${W}"/>

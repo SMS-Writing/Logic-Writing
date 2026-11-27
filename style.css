@@ -249,3 +249,59 @@ footer{font-size:12.5px;color:var(--sub);text-align:center;padding:22px 16px 30p
 @media(max-width:480px){.hero{flex-direction:column;align-items:flex-start}.hero .hart{display:none}.hero .ribbon{position:static;display:inline-block;margin-bottom:-4px}}
 table.tb td:first-child{white-space:nowrap}
 .tbwrap{overflow:auto}
+
+/* ── 상단 흐름 막대 (전체 단계 한눈에) ── */
+nav{display:none!important}
+.layout{display:block;max-width:1180px}
+main{margin:0 auto;max-width:1100px}
+#strip{display:none!important}
+#flow{position:sticky;top:var(--hh,62px);z-index:20;background:color-mix(in srgb,var(--bg) 94%,transparent);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding:10px 16px 8px;overflow-x:auto;scrollbar-width:thin}
+.flowin{display:flex;align-items:stretch;gap:6px;max-width:1180px;margin:0 auto;width:max-content;min-width:100%;justify-content:center}
+.fintro,.fs{border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 6px;border-radius:10px;min-width:60px;color:var(--sub);transition:background .15s}
+.fintro{align-self:flex-end;border:1px solid var(--line);background:var(--card);border-radius:14px;padding:8px 8px}
+.fintro:hover,.fs:hover{background:var(--soft)}
+.fintro i,.fs i{font-style:normal;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;border:1.5px solid var(--line);background:var(--card);font-size:12.5px;font-weight:800;color:var(--sub)}
+.fintro span,.fs span{font-size:11.5px;font-weight:700;white-space:nowrap;line-height:1.2}
+.fs.done i{background:var(--ok);border-color:var(--ok);color:#fff}
+.fs.on,.fintro.on{background:var(--accent-soft)}
+.fs.on i,.fintro.on i{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 0 0 4px rgba(154,15,53,.15)}
+.fs.on span,.fintro.on span{color:var(--accent)}
+.fs.wide{min-width:96px}
+.ph{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:5px 6px 4px;display:flex;flex-direction:column}
+.ph.cur{border-color:#e3b3c1;box-shadow:0 2px 10px rgba(154,15,53,.08)}
+.ph-t{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:800;color:var(--ink);padding:1px 6px 3px;white-space:nowrap}
+.ph-t b{width:8px;height:8px;border-radius:50%;display:inline-block}
+.ph-t em{font-style:normal;margin-left:auto;font-weight:700;color:var(--sub);font-size:11px;padding-left:8px}
+.ph-s{display:flex;gap:1px}
+.farrow{align-self:center;color:#c9bfa9;font-size:20px;font-weight:700;padding:14px 0 0}
+.fnow{display:none}
+.hstep.hrole{margin-left:6px;background:rgba(255,255,255,.95);color:var(--accent)}
+.toolsrow{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:28px;padding-top:14px;border-top:1px dashed var(--line)}
+@media(max-width:980px){
+ #flow{padding:8px 10px 6px}
+ .flowin{justify-content:flex-start}
+ .fs,.fintro{min-width:34px;padding:4px 3px}
+ .fs span,.fintro span{display:none}
+ .fs i,.fintro i{width:26px;height:26px;font-size:12px}
+ .ph-t .pl{display:none}
+ .farrow{font-size:16px;padding-top:12px}
+ .fnow{display:block;text-align:center;font-size:12.5px;font-weight:800;color:var(--accent);margin-top:4px}
+ .hstep.hrole{margin:6px 0 0;display:inline-flex}
+}
+@media(max-width:980px){
+ #flow{overflow:visible}
+ .flowin{gap:3px;width:100%;min-width:0;justify-content:center}
+ .farrow{display:none}
+ .ph{padding:3px 3px 3px;border-radius:12px}
+ .ph-t{font-size:10.5px;padding:0 3px 2px;justify-content:center}
+ .ph-t em{display:none}
+ .ph-s{gap:0}
+ .fs,.fintro{min-width:0;padding:2px 2px}
+ .fintro{padding:4px 3px;border-radius:12px}
+ .fs i,.fintro i{width:25px;height:25px;font-size:11px}
+ .fs.on i,.fintro.on i{box-shadow:0 0 0 3px rgba(154,15,53,.18)}
+}
+@media(min-width:600px) and (max-width:980px){.fs i,.fintro i{width:30px;height:30px;font-size:12px}.fs{padding:3px 5px}}
+
+.ph-t .ps{display:none}
+@media(max-width:980px){.fintro{display:none}.ph-t .ps{display:inline}}
