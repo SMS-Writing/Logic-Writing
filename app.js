@@ -282,7 +282,7 @@ function renderNav(){
 }
 function toolsHTML(){
  if(ME.role==='teacher')return !LIVE?`<div class="toolsrow"><span class="hint">체험 데이터</span><button class="btn s" onclick="demoReset('draft')">↺ 작성 중으로</button><button class="btn s" onclick="demoReset('full')">📘 완성본으로</button></div>`:'';
- return `<div class="toolsrow"><button class="btn s" onclick="go(0)">ⓘ 학습 안내</button><button class="btn s" onclick="dlPortfolio()">⬇ 학습 기록 내려받기 (.doc)</button>${!LIVE?`<span class="hint" style="margin-left:6px">체험 데이터</span><button class="btn s" onclick="demoReset('draft')">↺ 작성 중으로</button><button class="btn s" onclick="demoReset('full')">📘 모든 단계 완성본</button>`:''}</div>`;
+ return `<div class="toolsrow"><button class="btn s" onclick="go(0)">ⓘ 학습 안내</button><button class="btn s" onclick="viewPortfolio()">📄 학습 기록 보기·PDF</button><button class="btn s" onclick="dlPortfolio()">⬇ 학습 기록 Word(.docx)</button>${!LIVE?`<span class="hint" style="margin-left:6px">체험 데이터</span><button class="btn s" onclick="demoReset('draft')">↺ 작성 중으로</button><button class="btn s" onclick="demoReset('full')">📘 모든 단계 완성본</button>`:''}</div>`;
 }
 async function go(n){
  if(locked(n))toast(n===5?'AI 단계는 중심 주장·모든 단락의 요지·논증 요소를 완성해야 열립니다.':'먼저 5단계에서 AI에게 질문하세요.');
@@ -922,8 +922,8 @@ function stepRef(){
   <div class="stats">${STEPS.slice(1,11).map((s,i)=>`<div class="stat"><b>${stepDone(i+1)?'✓':'—'}</b>${i+1}. ${s.t}</div>`).join('')}</div>
   ${sub?`<div class="celebrate">${ART.celebrate()}<h3 style="margin:6px 0 2px">끝까지 해냈습니다!</h3><p class="hint" style="margin:0 0 10px">학습 기록을 제출했습니다. 이제 수정개요대로 글을 고쳐 쓸 차례입니다. 제출 후에도 내용을 고칠 수 있습니다.</p></div>`:''}
   <div class="journey" style="box-shadow:none">${ART.journey(doneFlags(S,MY,MYREV.n,MYDR),S.step,JLAB)}</div>
-  <div class="row"><button class="btn p" onclick="submitAll()">${sub?'다시 제출':'학습 기록 제출 완료'}</button><button class="btn" onclick="dlPortfolio()">⬇ 학습 기록 (.doc)</button><button class="btn" onclick="dlRev()">⬇ 수정개요만 (.doc)</button><button class="btn" onclick="dlTxt()">⬇ 본문 (.txt)</button></div>
-  <p class="hint">.doc 파일은 한글·Word에서 열립니다. 제출한 기록은 교수자가 바로 확인합니다.</p></div><div class="row" style="margin-top:18px"><button class="btn" onclick="go(10)">← 이전</button></div>`;
+  <div class="row"><button class="btn p" onclick="submitAll()">${sub?'다시 제출':'학습 기록 제출 완료'}</button><button class="btn" onclick="viewPortfolio()">📄 학습 기록 보기·PDF</button><button class="btn" onclick="dlPortfolio()">⬇ 학습 기록 Word(.docx)</button><button class="btn" onclick="dlRev()">⬇ 수정개요 Word(.docx)</button><button class="btn" onclick="dlTxt()">⬇ 본문 (.txt)</button></div>
+  <p class="hint">Word(.docx) 파일은 휴대폰의 Word·한컴·폴라리스 앱이나 구글 문서에서 바로 열립니다. ‘보기·PDF’를 누르면 내려받지 않고 바로 읽을 수 있고, 인쇄 화면에서 PDF로도 저장할 수 있습니다. 제출한 기록은 교수자가 바로 확인합니다.</p></div><div class="row" style="margin-top:18px"><button class="btn" onclick="go(10)">← 이전</button></div>`;
 }
 function submitAll(){const miss=STEPS.slice(1,11).map((s,i)=>stepDone(i+1)?null:(i+1)+'단계').filter(Boolean);if(miss.length&&!confirm(`아직 끝나지 않은 단계가 있습니다: ${miss.join(', ')}\n그래도 제출할까요?`))return;if(REFQ.some((_,k)=>len(S.reflect[k])<20))return toast('성찰 질문에 각각 20자 이상 답하세요.');S.status='제출 완료';save();render();toast('학습 기록을 제출했습니다.')}
 
@@ -964,7 +964,7 @@ function teacherStudent(){
  return `<button class="back" onclick="VIEW=null;CUR=null;tgo('dash')">← 학생 현황</button>
  ${heroT(esc(nameOf(VIEW.project.owner))+' 학생의 기록',esc(D.title||'제목 없음')+' · '+esc(VIEW.project.status))}
  <div class="tabs"><button class="${t==='rec'?'on':''}" onclick="UI.tabT='rec';render()">📚 학습 기록</button><button class="${t==='doc'?'on':''}" onclick="UI.tabT='doc';render()">📝 글에 메모하기</button><button class="${t==='fb'?'on':''}" onclick="UI.tabT='fb';render()">🧾 종합 피드백</button><button class="${t==='dr'?'on':''}" onclick="UI.tabT='dr';render()">📋 초고 동료 검토</button></div>
- ${t==='rec'?`<div class="row" style="margin-bottom:10px"><button class="btn s" onclick="dlPortfolio(VIEW)">⬇ 이 학생 기록 (.doc)</button></div><div class="preview">${portfolioBody(D,VIEW,(TD.dr||[]).filter(r=>r.author===VIEW.project.owner))}</div>`:t==='doc'?docView(VIEW,'teacher'):t==='dr'?teacherDR(VIEW.project.owner):fbForm(VIEW)}`;
+ ${t==='rec'?`<div class="row" style="margin-bottom:10px"><button class="btn s" onclick="viewPortfolio(VIEW)">📄 보기·PDF</button><button class="btn s" onclick="dlPortfolio(VIEW)">⬇ 이 학생 기록 Word(.docx)</button></div><div class="preview">${portfolioBody(D,VIEW,(TD.dr||[]).filter(r=>r.author===VIEW.project.owner))}</div>`:t==='doc'?docView(VIEW,'teacher'):t==='dr'?teacherDR(VIEW.project.owner):fbForm(VIEW)}`;
 }
 function classesPage(){
  return heroT('분반·참여 코드','학생이 가입할 때 입력할 분반 참여 코드를 관리합니다.')+`
@@ -1002,8 +1002,25 @@ function portfolioBody(D,X,DRR){
  <h2>9. 수정개요</h2>${revTable(D)}
  <h2>10. 학습 성찰</h2>${REFQ.map((qq,i)=>`<p class="c">${i+1}. ${qq}</p><p>${esc(D.reflect[i])}</p>`).join('')}`;
 }
-function dlPortfolio(X){X=X&&X.project?X:MY;const D=X===MY?S:Object.assign(blankData(),X.project.data);const DRR=X===MY?MYDR.received:(TD&&TD.dr||[]).filter(r=>r.author===X.project.owner);dl(`학습기록_${D.author||'작성자'}.doc`,wrapDoc(portfolioBody(D,X,DRR)),'application/msword')}
-function dlRev(){dl(`수정개요_${S.author||'작성자'}.doc`,wrapDoc(`<h1>수정개요</h1><p>제목: ${esc(S.title)}<br>작성자: ${esc(S.author)}<br>중심 주장: ${esc(S.thesis)}</p>${revTable(S)}`),'application/msword')}
+const FOOT='Copyright © 2026 선민서. · 고려대학교 학부대학 글쓰기 수업용 개인 제작 자료';
+function pfData(X){X=X&&X.project?X:MY;const D=X===MY?S:Object.assign(blankData(),X.project.data);const DRR=X===MY?MYDR.received:(TD&&TD.dr||[]).filter(r=>r.author===X.project.owner);return {D,html:portfolioBody(D,X,DRR)}}
+function saveDocx(name,html){try{dl(name+'.docx',DOCX.build(html,FOOT),'application/vnd.openxmlformats-officedocument.wordprocessingml.document');toast('Word 파일을 내려받았습니다.')}catch(e){toast('파일을 만들지 못했습니다: '+e.message)}}
+function viewPage(title,html){
+ const w=window.open('','_blank');if(!w)return toast('새 창이 막혔습니다. 브라우저의 팝업 차단을 풀어 주세요.');
+ w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>
+ <style>body{font-family:"Pretendard Variable","Apple SD Gothic Neo","Malgun Gothic",sans-serif;color:#15294a;max-width:860px;margin:0 auto;padding:16px 18px 60px;line-height:1.7;word-break:keep-all}
+ h1{color:#1f4e9c;font-size:22px}h2{color:#1f4e9c;font-size:17px;border-bottom:2px solid #1f4e9c;padding-bottom:4px;margin-top:28px}
+ table{border-collapse:collapse;width:100%;font-size:13.5px;margin:8px 0}td,th{border:1px solid #c3cfdf;padding:6px;vertical-align:top}th{background:#e9f0f7}
+ .c{color:#5b6a80;font-size:13.5px}mark{background:#fde68a}.bar{position:sticky;top:0;background:#1f4e9c;color:#fff;margin:-16px -18px 16px;padding:10px 18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+ .bar button{border:0;border-radius:8px;padding:7px 14px;font-weight:700;background:#fff;color:#1f4e9c;font-size:14px}.bar span{font-size:12.5px;opacity:.9}
+ @media print{.bar{display:none}body{padding:0}}</style></head><body>
+ <div class="bar"><button onclick="window.print()">🖨 인쇄 · PDF로 저장</button><span>인쇄 화면에서 ‘PDF로 저장’을 고르면 PDF 파일이 됩니다.</span></div>${html}<p class="c">${FOOT}</p></body></html>`);
+ w.document.close();
+}
+function viewPortfolio(X){const {D,html}=pfData(X);viewPage('학습 기록 · '+(D.author||''),html)}
+function dlPortfolio(X){const {D,html}=pfData(X);saveDocx(`학습기록_${D.author||'작성자'}`,html)}
+function revHTML(){return `<h1>수정개요</h1><p>제목: ${esc(S.title)}<br>작성자: ${esc(S.author)}<br>중심 주장: ${esc(S.thesis)}</p>${revTable(S)}`}
+function dlRev(){saveDocx(`수정개요_${S.author||'작성자'}`,revHTML())}
 function dlTxt(){dl(`${S.title||'본문'}.txt`,S.title+'\n'+S.author+'\n\n'+S.paras.map(p=>p.text).join('\n\n'),'text/plain;charset=utf-8')}
 
 /* ================= 렌더 ================= */
