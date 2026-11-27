@@ -10,7 +10,7 @@ const STEPS=[
  {t:'단락 요지 쓰기',s:'내 말로 한 문장 압축',g:'Ⅰ. 내 글 분석',core:true,goal:'각 단락이 독자에게 남겨야 할 주장을 자신의 말로 한 문장으로 압축하고, 단락의 역할과 앞 단락과의 관계를 밝힌다.'},
  {t:'논증 요소 분석',s:'근거·예시·전제·반론·반박',g:'Ⅰ. 내 글 분석',goal:'단락마다 요지(주장)를 떠받치는 근거·예시·전제·반론·반박을 자신의 말로 분석하고, 비어 있는 요소를 확인한다.'},
  {t:'역개요 점검',s:'요지로 본 글의 뼈대',g:'Ⅰ. 내 글 분석',goal:'요지와 논증 요소만으로 글의 현재 구조를 재구성하고, 가장 약한 연결이 어디인지 스스로 진단한다.'},
- {t:'AI에게 조언 구하기',s:'본문 없이 분석만 전송',g:'Ⅱ. 비판적 검토',goal:'본문이 아닌 자신의 분석(요지·논증 요소·역개요)만으로 AI에게 검토 질문을 받는다.'},
+ {t:'AI에게 조언 구하기',s:'각자 AI에 묻고 내 말로 요약',g:'Ⅱ. 비판적 검토',goal:'각자 쓰는 AI에 중심 주장과 요지만으로 질문하고, AI의 답을 자기 말로 요약해 적는다.'},
  {t:'AI 조언 검토',s:'수용 · 부분 수용 · 거부',g:'Ⅱ. 비판적 검토',goal:'AI의 지적을 원문과 대조해 수용·부분 수용·거부로 판단하고, 그 근거를 쓴다.'},
  {t:'동료 검토',s:'메모 · 독자 요지 · 종합 피드백',g:'Ⅱ. 비판적 검토',goal:'동료의 글에 구체적인 메모와 종합 피드백을 남기고, 각 단락이 어떻게 읽혔는지 독자 요지로 알려 준다.'},
  {t:'피드백 답변',s:'이해 · 판단 · 반영 계획',g:'Ⅱ. 비판적 검토',goal:'받은 의견마다 어떻게 이해했는지, 수용 여부와 그 이유, 수정에 어떻게 반영할지 답한다.'},
@@ -240,7 +240,7 @@ const stepDone=i=>!!S&&doneFlags(S,MY,MYREV.n,MYDR)[i];
 const pctOf=f=>Math.round(f.slice(1).filter(Boolean).length/11*100);
 const gistsDone=()=>S.paras.length>0&&S.paras.every(p=>gistState(p).ok);
 const anDone=()=>S.paras.length>0&&S.paras.every(anOK);
-function locked(i){if(i===5)return !(gistsDone()&&anDone()&&len(S.thesis)>=10);if(i===6)return !S.ai.some(e=>!e.refusal);return false}
+function locked(i){return false}
 const lockMsg={5:'요지·논증 요소 완성 후 열림',6:'AI 질문 후 열림'};
 
 /* ================= 상단·내비게이션 ================= */
@@ -303,7 +303,7 @@ function step0(){
  <div class="journey"><h3>나의 고쳐 쓰기 여정</h3><p class="hint" style="margin:0 0 6px">단계를 마칠 때마다 돌다리가 초록색으로 바뀝니다. 마지막 깃발까지 가 봅시다.</p>${ART.journey(doneFlags(S,MY,MYREV.n,MYDR),S.step,JLAB)}</div>
  <div class="prin">
   <div>${ART.prin[0]}<b>① 요지는 내 말로</b>모든 활동의 출발점은 단락마다 직접 쓴 한 문장 요지입니다. 원문 복사·붙여 넣기는 막혀 있습니다. 요지가 안 써지는 단락이 곧 고쳐야 할 단락입니다.</div>
-  <div>${ART.prin[1]}<b>② AI에게 본문은 주지 않는다</b>AI는 글 전문을 받지 않습니다. 여러분이 쓴 중심 주장·요지·논증 요소만 받고, 문장을 대신 쓰지 않으며 질문만 돌려줍니다.</div>
+  <div>${ART.prin[1]}<b>② AI에게 본문은 주지 않는다</b>AI에는 글 전문을 넣지 않습니다. 각자 쓰는 AI에 중심 주장과 요지만으로 묻고, AI의 답은 복사하지 않고 자기 말로 요약합니다.</div>
   <div>${ART.prin[2]}<b>③ 판단은 내가 한다</b>AI의 지적은 수용·부분 수용·거부로, 동료의 의견은 수용·부분 수용·보류로 판단하고 근거를 씁니다. 그 판단의 기록이 수정개요가 됩니다.</div>
  </div>
  <div class="notice i" style="margin-top:14px">작업 내용은 자동으로 저장됩니다. ${LIVE?'다른 기기에서 로그인해도 이어서 작업할 수 있고, 교수자가 진행 상황을 확인합니다.':'<b>체험 모드</b>에서는 이 브라우저에만 저장됩니다. 오른쪽 위에서 체험 계정을 바꾸면 동료·교수자 화면을 볼 수 있습니다.'}</div>
@@ -492,69 +492,66 @@ function payload(type,qq){
  return `[중심 주장]\n${S.thesis}\n\n[단락별 분석 — 학생이 직접 쓴 요약]\n`+S.paras.map((p,i)=>`${i+1}. (${p.role}${i>0&&p.rel?' | 앞 단락과: '+p.rel:''})\n   주장(요지): ${p.gist}\n`+AN.map(([k,l])=>`   ${l}: ${p.an[k]||'-'}`).join('\n')).join('\n')+`\n\n[학생의 현재 구조 진단]\n${S.outline.map(x=>'- '+cut(x,80)).join('\n')}\n\n[질문 유형] ${type}\n[학생 질문] ${qq||'(아직 없음)'}\n\n※ 본문은 전송되지 않습니다.`;
 }
 const ptOK=p=>p.verdict&&len(p.reason)>=20&&(p.verdict==='거부'||len(p.plan)>=10);
-function canAsk(){if(S.ai.length>=AI_MAX)return false;const l=S.ai[S.ai.length-1];return !l||l.refusal||l.points.every(ptOK)}
-function extPrompt(qq){return `당신은 대학 글쓰기 수업의 논증 구조 검토자입니다. 아래는 학생이 자기 글을 직접 요약·분석한 내용이며, 글 원문은 제공되지 않습니다.
-규칙:
-1) 글을 대신 쓰거나 고친 문장을 제시하지 마세요.
-2) 원문을 보지 못했으므로 단정하지 말고, 학생이 원문에서 확인해야 할 질문 형태로 지적하세요.
-3) 가장 중요한 논리적 문제 3가지만, 번호를 붙이고 해당 단락 번호와 함께 쓰세요.
-4) 각 지적은 3문장 이내로 쓰세요.
+function canAsk(){return true}
+const PROMPTS=[
+ ['전제 찾기','각 근거 단락의 요지가 중심 주장을 뒷받침하려면 어떤 숨은 전제가 필요한지, 그리고 그 전제가 의심스러운 곳은 어디인지 질문 형태로 짚어 주세요.'],
+ ['반론 찾기','이 중심 주장에 대해 가장 강한 반론 3가지를 들고, 내 글이 그 반론에 답하고 있는지 내가 원문에서 확인할 질문을 주세요.'],
+ ['연결 점검','단락의 순서와 연결에서 비약이 있는 곳, 결론이 중심 주장보다 강하거나 약해진 곳을 질문 형태로 짚어 주세요.'],
+ ['근거 점검','각 단락의 근거가 주장을 뒷받침하기에 충분하고 구체적인지, 지나친 일반화는 없는지 질문 형태로 짚어 주세요.']];
+function promptText(k){
+ const P=S.paras.filter(p=>len(p.gist));
+ const g=P.length?S.paras.map((p,i)=>`${i+1}. ${p.role?'('+p.role+') ':''}${p.gist||'(요지 미작성)'}`).join('\n'):'1. (2단계에서 쓴 1단락 요지)\n2. (2단계에서 쓴 2단락 요지)\n…';
+ return `아래는 내 논증문의 중심 주장과 단락별 요지입니다. 글 원문은 주지 않습니다.
 
-`+payload('외부 AI 검토',qq)}
+[요청] ${PROMPTS[k][1]}
+
+[규칙]
+- 글을 대신 쓰거나 고친 문장을 제시하지 마세요.
+- 원문을 보지 못했으므로 단정하지 말고, 내가 원문에서 확인할 질문 형태로 지적하세요.
+- 가장 중요한 지적 3가지만, 단락 번호와 함께, 각각 3문장 이내로 쓰세요.
+
+[중심 주장]
+${S.thesis||'(1단계에서 쓴 중심 주장)'}
+
+[단락별 요지]
+${g}`;
+}
 function step5(){
- if(locked(5))return head(5)+`<div class="notice w">🔒 이 단계는 <b>중심 주장</b>, <b>모든 단락의 요지</b>, <b>논증 요소 분석</b>을 완성해야 열립니다. AI는 여러분의 글 전문을 받지 않고 여러분이 쓴 분석만 받기 때문에, 분석이 부실하면 AI의 조언도 부실해집니다.</div><div class="row"><button class="btn p" onclick="go(2)">2단계로</button><button class="btn" onclick="go(3)">3단계로</button></div>`;
- const left=AI_MAX-S.ai.length,ok=canAsk(),last=S.ai[S.ai.length-1],m=UI.aimode||'ext',n=S.paras.length;
- const blocked=!ok&&left>0?'<div class="notice w">앞선 AI 지적을 6단계에서 모두 판단해야 다음 질문을 할 수 있습니다.</div>':left<=0?'<div class="notice w">질문 횟수를 모두 썼습니다.</div>':'';
- const pSel=(j)=>`<select class="t" id="ex_p${j}" style="width:auto"><option value="">관련 단락</option><option value="all">전체</option>${S.paras.map((_,i)=>`<option value="${i}">${i+1}단락</option>`).join('')}</select>`;
- return head(5,`<p>AI는 <b>글 전문을 받지 않습니다</b>. 여러분이 쓴 중심 주장·요지·논증 요소·구조 진단만 받습니다. AI는 원문을 보지 못했으므로 그 지적은 틀릴 수 있습니다.</p><p><b>AI의 말을 복사해 붙이지 않습니다.</b> AI의 답을 읽고 생각한 뒤, 각 지적이 무슨 뜻인지 <b>자기 말로 요약</b>해 옮깁니다. 요약할 수 없는 지적은 아직 이해하지 못한 지적입니다. 그다음 6단계에서 원문과 대조해 수용·부분 수용·거부를 판단하고, 받아들인 지적은 어떻게 반영할지 씁니다.</p>`,true)+`
- <div class="tabs"><button class="${m==='ext'?'on':''}" onclick="UI.aimode='ext';render()">🤖 내가 쓰는 AI에게 묻기 (무료)</button><button class="${m==='gen'?'on':''}" onclick="UI.aimode='gen';render()">🧩 내장 질문 생성기</button></div>
- <div class="hint" style="margin:-6px 0 12px">남은 질문 ${left}/${AI_MAX}회 (두 방식 합산)</div>${blocked}
- ${m==='ext'?`
- <div class="card"><h3>① 질문문 만들기</h3>
-  <label class="f">AI에게 묻고 싶은 것 (200자 이내, 붙여 넣기 불가)</label>
-  <textarea class="t" id="aiq" rows="2" maxlength="200" placeholder="예: 3단락의 요지에서 중심 주장으로 가려면 어떤 전제가 필요할까?" oninput="$('#pl').textContent=extPrompt(this.value)" onpaste="blockPaste(event,'질문은 직접 쓰세요. 본문 문장도 AI에 보낼 수 없습니다.')" ondrop="event.preventDefault()"></textarea>
-  <label class="f">AI에게 보낼 질문문 (본문 없이 내 분석만 들어 있음)</label><div class="payload" id="pl">${esc(extPrompt(''))}</div>
-  <div class="row" style="margin-top:10px"><button class="btn p" ${ok?'':'disabled'} onclick="copyPrompt()">📋 질문문 복사</button><span class="hint">ChatGPT·Claude·Gemini 등 평소 쓰는 AI 대화창에 붙여 넣으세요.</span></div>
+ const k=UI.pk||0,pSel=(j)=>`<select class="t" id="ex_p${j}" style="width:auto"><option value="">관련 단락</option><option value="all">전체</option>${S.paras.map((_,i)=>`<option value="${i}">${i+1}단락</option>`).join('')}</select>`;
+ const ready=gistsDone()&&len(S.thesis)>=10;
+ return head(5,`<p>평소 쓰는 AI(ChatGPT·Claude·Gemini 등)를 <b>따로 열어</b> 아래 질문 프롬프트로 물어봅니다. 프롬프트에는 <b>내 중심 주장과 단락 요지만</b> 들어 있습니다. <b>글 원문은 AI에 넣지 마세요.</b></p><p>AI의 답은 <b>복사해 붙이지 않습니다.</b> 끝까지 읽고 생각한 뒤, 각 지적이 무슨 뜻인지 <b>자기 말로 요약</b>해 적습니다. 요약할 수 없는 지적은 아직 이해하지 못한 지적입니다. 적은 지적은 6단계에서 원문과 대조해 판단합니다.</p>`,true)+`
+ ${ready?'':'<div class="notice w">중심 주장(1단계)과 단락 요지(2단계)를 먼저 써 두면 프롬프트에 자동으로 들어가 더 좋은 답을 받을 수 있습니다.</div>'}
+ <div class="card"><h3>① 질문 프롬프트 복사하기</h3>
+  <p class="hint">무엇을 물어볼지 고르고, 프롬프트를 복사해 AI 대화창에 붙여 넣으세요. 여러 개를 차례로 물어봐도 됩니다.</p>
+  <div class="judge">${PROMPTS.map(([t],i)=>`<label><input type="radio" name="pk" ${k===i?'checked':''} onchange="UI.pk=${i};render()"> ${t}</label>`).join('')}</div>
+  <div class="payload" id="pl">${esc(promptText(k))}</div>
+  <div class="row" style="margin-top:10px"><button class="btn p" onclick="copyPrompt()">📋 프롬프트 복사</button><span class="hint">복사가 안 되면 상자 안 글을 길게 눌러 복사하세요.</span></div>
  </div>
- <div class="card"><h3>② AI의 지적을 내 말로 요약하기</h3>
+ <div class="card"><h3>② AI의 답을 내 말로 요약해 적기</h3>
   <div class="notice a">AI 답을 <b>그대로 옮겨 적지 마세요.</b> 끝까지 읽고 생각한 뒤, AI 창을 닫거나 내려 두고 <b>기억나는 핵심을 내 말로</b> 쓰세요. 이 칸은 붙여 넣기가 되지 않습니다. 지적이 3개보다 적으면 나머지 칸은 비워 둡니다.</div>
-  <div class="row"><label class="f" style="margin:0">사용한 AI</label><select class="t" id="ex_tool" style="width:auto"><option>ChatGPT</option><option>Claude</option><option>Gemini</option><option>기타</option></select></div>
+  <div class="row"><label class="f" style="margin:0">사용한 AI</label><select class="t" id="ex_tool" style="width:auto"><option>ChatGPT</option><option>Claude</option><option>Gemini</option><option>기타</option></select>
+   <label class="f" style="margin:0 0 0 8px">물어본 내용</label><select class="t" id="ex_type" style="width:auto">${PROMPTS.map(([t],i)=>`<option ${k===i?'selected':''}>${t}</option>`).join('')}<option>내가 만든 질문</option></select></div>
   ${[0,1,2].map(j=>`<label class="f">AI 지적 ${j+1} — 무엇이 왜 문제라고 했는가 (내 말로)</label><div class="row" style="align-items:flex-start">${pSel(j)}<textarea class="t" id="ex_t${j}" rows="2" maxlength="200" style="flex:1;min-width:220px" placeholder="예: 2단락에서 ‘반복되면 능력을 잃는다’는 건 확인 안 된 예측이라 근거가 필요하다고 함" ${NP}></textarea></div>`).join('')}
   <label class="hint" style="display:block;margin-top:10px"><input type="checkbox" id="ex_ok"> AI의 문장을 옮겨 적지 않고, 이해한 내용을 내 말로 요약했습니다.</label>
-  <div class="row" style="margin-top:10px"><button class="btn p" ${ok?'':'disabled'} onclick="saveExt()">요약 저장하고 6단계에서 판단하기 →</button></div>
- </div>`:`
- <div class="card"><h3>내장 질문 생성기</h3><p class="hint">여러분의 분석을 규칙에 따라 점검해 질문을 만듭니다. 실제 AI는 아니며, 외부 AI를 쓸 수 없을 때 사용합니다.</p>
-  <div class="row"><div style="flex:1;min-width:200px"><label class="f" style="margin-top:0">질문 유형</label><select class="t" id="aitype" onchange="$('#pl').textContent=payload(this.value,$('#aiq').value)"><option>전제</option><option>반론</option><option>연결</option><option>자유 질문</option></select></div></div>
-  <label class="f">질문 (200자 이내, 붙여 넣기 불가)</label>
-  <textarea class="t" id="aiq" rows="3" maxlength="200" placeholder="예: 3단락의 요지에서 중심 주장으로 가려면 어떤 전제가 필요할까?" oninput="$('#pl').textContent=payload($('#aitype').value,this.value)" onpaste="blockPaste(event,'질문은 붙여 넣을 수 없습니다.')" ondrop="event.preventDefault()"></textarea>
-  <label class="f">점검에 쓰이는 내용</label><div class="payload" id="pl">${esc(payload('전제',''))}</div>
-  <div class="row" style="margin-top:10px"><button class="btn p" id="askbtn" ${ok?'':'disabled'} onclick="askAI()">질문 받기</button></div>
+  <div class="row" style="margin-top:10px"><button class="btn p" onclick="saveExt()">요약 저장하고 6단계에서 판단하기 →</button></div>
  </div>
- ${last&&!last.ext?`<div class="ai"><div class="q">가장 최근 응답 · Q${S.ai.length}. [${esc(last.type)}] ${esc(last.q)}</div>${last.points.map(pt=>`<div class="pt"><div class="tx">${esc(pt.text)}</div></div>`).join('')}
-  ${last.refusal?'':`<div class="row"><button class="btn p" onclick="go(6)">6단계에서 검토하기 →</button></div>`}</div>`:''}`}
+ ${S.ai.length?`<p class="hint">지금까지 적은 AI 지적: ${S.ai.filter(e=>!e.refusal).reduce((n,e)=>n+e.points.length,0)}개 · 6단계에서 판단합니다.</p>`:''}
  <div class="row" style="margin-top:18px"><button class="btn" onclick="go(4)">← 이전</button>${S.ai.length?'<button class="btn" onclick="go(6)">6단계: AI 조언 검토 →</button>':''}</div>`;
 }
-function qOverlap(qq){const nq=norm(qq),nd=norm(S.paras.map(p=>p.text).join(''));for(let i=0;i+12<=nq.length;i++){if(nd.includes(nq.slice(i,i+12)))return true}return false}
 async function copyPrompt(){
- const qq=$('#aiq').value.trim();
- if(qq.length<5)return toast('AI에게 묻고 싶은 것을 5자 이상 쓰세요.');
- if(qOverlap(qq))return toast('질문에 본문 문장이 들어 있습니다. 본문은 AI에 보낼 수 없습니다. 단락 번호로 가리켜 물어보세요.');
- const t=extPrompt(qq);
+ const t=promptText(UI.pk||0);
  try{await navigator.clipboard.writeText(t);toast('복사했습니다. AI 대화창에 붙여 넣으세요.')}
  catch(e){const r=document.createRange();r.selectNodeContents($('#pl'));getSelection().removeAllRanges();getSelection().addRange(r);toast('자동 복사가 안 됩니다. 선택된 글을 길게 눌러 복사하세요.')}
- S._lastQ=qq;save();
 }
 function saveExt(){
- const qq=($('#aiq').value.trim())||S._lastQ||'';
- if(qq.length<5)return toast('먼저 ①에서 질문을 쓰고 질문문을 복사해 AI에게 물어보세요.');
  const pts=[0,1,2].map(j=>({t:$('#ex_t'+j).value.trim(),p:$('#ex_p'+j).value})).filter(x=>x.t);
  if(!pts.length)return toast('AI의 지적을 하나 이상 내 말로 요약하세요.');
  if(pts.some(x=>x.t.length<15))return toast('각 지적을 15자 이상, 무엇이 왜 문제인지 드러나게 요약하세요.');
  if(!$('#ex_ok').checked)return toast('내 말로 요약했는지 확인란에 체크하세요.');
- const tool=$('#ex_tool').value;
- S.ai.push({id:uid(),type:'외부 AI · '+tool,q:qq,ext:true,tool,refusal:false,at:new Date().toISOString(),
+ const tool=$('#ex_tool').value,type=$('#ex_type').value;
+ S.ai.push({id:uid(),type:'외부 AI · '+tool,q:type,ext:true,tool,refusal:false,at:new Date().toISOString(),
   points:pts.map(x=>({p:x.p===''||x.p==='all'?null:+x.p,text:x.t,verdict:'',reason:'',plan:''}))});
- delete S._lastQ;save();go(6);
+ save();go(6);
 }
 function askAI(){
  const qq=$('#aiq').value.trim(),type=$('#aitype').value;
@@ -580,7 +577,7 @@ function mock(type,qq){
 
 /* ================= 6. AI 조언 검토 ================= */
 function step6(){
- if(locked(6))return head(6)+`<div class="notice w">🔒 먼저 5단계에서 AI에게 질문하세요.</div><button class="btn p" onclick="go(5)">5단계로</button>`;
+ if(!S.ai.length)return head(6)+`<div class="notice w">아직 적은 AI 지적이 없습니다. 5단계에서 AI에게 물어보고, 답을 내 말로 요약해 적으면 이곳에서 판단합니다.</div><button class="btn p" onclick="go(5)">5단계로</button>`+nextBtn(6);
  return head(6,`<p>AI의 지적은 <b>정답이 아니라 가설</b>입니다. 본문을 본 적 없는 AI는 틀릴 수 있습니다. 각 지적을 <b>원문과 대조한 뒤</b> 수용·부분 수용·거부 중 하나로 판단하고, 내 글의 어느 부분 때문에 그렇게 판단했는지 근거를 쓰세요. 근거가 분명하다면 거부도 좋은 판단입니다.</p><p>수용하거나 부분 수용한 지적은 <b>내 글에 어떻게 반영할지</b>까지 씁니다. 이 내용은 10단계 수정개요로 이어집니다.</p>`,true)+`
  ${S.ai.map((e,k)=>`<div class="ai"><div class="q">Q${k+1}. [${esc(e.type)}] ${esc(e.q)} <span class="hint">· ${esc(fmt(e.at))}</span></div>
   ${e.ext?'<div class="hint" style="margin-bottom:4px">아래는 AI의 답을 내가 요약한 것입니다.</div>':''}
@@ -591,7 +588,7 @@ function step6(){
    ${pt.verdict&&pt.verdict!=='거부'?`<label class="f">반영 방법 (10자 이상): 내 글의 어디를 어떻게 고칠 것인가?</label><textarea class="t" rows="2" oninput="judge(${k},${j},'plan',this.value)" ${NP}>${esc(pt.plan||'')}</textarea>`:''}`}
   </div>`).join('')}</div>`).reverse().join('')}
  <div class="card"><h3>원문과 대조해 추가로 발견한 점</h3><p class="hint">AI가 짚지 않았지만, 원문을 다시 읽으며 새로 찾은 문제를 쓰세요.</p><textarea class="t" rows="3" oninput="S.aiExtra=this.value;save()" ${NP}>${esc(S.aiExtra)}</textarea></div>
- <div class="row">${canAsk()?'<button class="btn" onclick="go(5)">← AI에게 다른 질문하기</button>':''}</div>`+nextBtn(6);
+ <div class="row"><button class="btn" onclick="go(5)">← AI에게 더 물어보기</button></div>`+nextBtn(6);
 }
 function judge(k,j,f,v){S.ai[k].points[j][f]=v;save();if(f==='verdict')return render();if(f==='reason'){const l=$('#jl'+k+'_'+j);if(l)l.textContent=len(v)+'/20자'}renderNav()}
 
