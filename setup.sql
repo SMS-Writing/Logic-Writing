@@ -269,3 +269,47 @@ create policy dr_upd on public.draft_reviews for update to authenticated
 drop policy if exists dr_del on public.draft_reviews;
 create policy dr_del on public.draft_reviews for delete to authenticated
   using (reviewer = auth.uid() or public.is_teacher());
+
+-- ---------------------------------------------------------------------
+-- 학과·학번, 동료 피드백 도움 정도 평가 (2026-11-27 추가)
+-- ---------------------------------------------------------------------
+-- 학과·학번: 본인과 교수자만 볼 수 있음 (같은 분반 동료에게는 보이지 않음)
+create table if not exists public.student_info(
+  id uuid primary key references public.profiles(id) on delete cascade,
+  dept text not null,
+  student_no text not null,
+  updated_at timestamptz not null default now()
+);
+grant select, insert, update on public.student_info to authenticated;
+alter table public.student_info enable row level security;
+drop policy if exists si_sel on public.student_info;
+create policy si_sel on public.student_info for select to authenticated using (id = auth.uid() or public.is_teacher());
+drop policy if exists si_ins on public.student_info;
+create policy si_ins on public.student_info for insert to authenticated with check (id = auth.uid());
+drop policy if exists si_upd on public.student_info;
+create policy si_upd on public.student_info for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
+
+-- 동료 피드백 도움 정도: 평가한 학생 본인과 교수자만 볼 수 있음 (평가받은 동료에게는 보이지 않음)
+create table if not exists public.peer_ratings(
+  id uuid primary key default gen_random_uuid(),
+  rater uuid not null references public.profiles(id) on delete cascade,
+  reviewer uuid not null references public.profiles(id) on delete cascade,
+  kind text not null check (kind in ('memo','feedback','draft')),
+  target text not null,
+  score int not null check (score between 1 and 5),
+  note text not null default '',
+  updated_at timestamptz not null default now(),
+  unique(rater, kind, target)
+);
+grant select, insert, update, delete on public.peer_ratings to authenticated;
+alter table public.peer_ratings enable row level security;
+drop policy if exists pr_sel on public.peer_ratings;
+create policy pr_sel on public.peer_ratings for select to authenticated using (rater = auth.uid() or public.is_teacher());
+drop policy if exists pr_ins on public.peer_ratings;
+create policy pr_ins on public.peer_ratings for insert to authenticated
+  with check (rater = auth.uid() and reviewer <> auth.uid()
+    and exists(select 1 from public.profiles p where p.id = reviewer and p.role = 'student' and p.class_code = public.my_class()));
+drop policy if exists pr_upd on public.peer_ratings;
+create policy pr_upd on public.peer_ratings for update to authenticated using (rater = auth.uid()) with check (rater = auth.uid());
+drop policy if exists pr_del on public.peer_ratings;
+create policy pr_del on public.peer_ratings for delete to authenticated using (rater = auth.uid());

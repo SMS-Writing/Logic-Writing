@@ -44,7 +44,7 @@ const ABS=/(모든|항상|반드시|전혀|절대|누구나|무조건|완전히|
 /* ================= 상태 ================= */
 const CFG=window.AIDT_CONFIG||{};
 const LIVE=!!(CFG.supabaseUrl&&CFG.supabaseAnonKey&&/^https:\/\//.test(CFG.supabaseUrl))&&!/[?&]demo\b/.test(location.search);
-const DKEY='aidt-demo-v3';
+const DKEY='aidt-demo-v4';
 let MYDR={given:[],received:[]},DRCOUNT={};
 let db=null,ME=null,PEOPLE={},MYP=null,S=null,MY=null,VIEW=null,CUR=null,PEERS=[],MYREV={fb:new Set(),cm:new Set(),n:0},TD=null,CLASSES=[];
 const UI={tab9:'give',tab7:'doc',tab8:'memo',tabT:'rec',tpage:'dash',tclass:'',sel:null,pending:null,showResolved:false,focusC:null,auth:'login'};
@@ -134,7 +134,8 @@ async function afterLogin(){
   MYP=await q(db.from('projects').select('*').eq('owner',ME.id).maybeSingle());
   if(!MYP)MYP=await q(db.from('projects').insert({owner:ME.id,class_code:ME.class_code,data:blankData(),shared:false,status:'진행 중'}).select().single());
   S=Object.assign(blankData(),MYP.data||{});if(!S.author)S.author=ME.name;
-  MY=await loadCtx(MYP.id);await loadMyReviews();await loadDR();
+  MY=await loadCtx(MYP.id);await loadMyReviews();await loadDR();await loadInfo();await loadRatings();
+  if(LIVE&&!INFO&&!INFO_MISSING){renderWho();renderNav();return showInfo(false)}
  }
  render();window.scrollTo(0,0);
 }
@@ -187,7 +188,9 @@ function showAuth(mode){
    <button class="btn p" style="width:100%;margin-top:14px" onclick="${tab==='signup'?'doSignup()':'doLogin()'}">${tab==='signup'?'가입하고 시작하기':'로그인'}</button>
   </div>`}</div>`;
 }
-function joinFields(){return `<label class="f">이름 (수업에서 보일 이름)</label><input class="t" id="au_name">
+function joinFields(){return `<label class="f">이름 (LMS와 같은 실명)</label><input class="t" id="au_name" autocomplete="name">
+ <div class="row" style="gap:10px"><div style="flex:1;min-width:140px"><label class="f">학과</label><input class="t" id="au_dept" placeholder="예: 국어국문학과"></div><div style="flex:1;min-width:140px"><label class="f">학번</label><input class="t" id="au_sno" inputmode="numeric" placeholder="예: 2026123456"></div></div>
+ <p class="hint" style="margin:4px 0 0">🔒 학과·학번은 교수자만 봅니다. 동료에게는 이름만 보입니다.</p>
  <label class="f">수업 참여 코드</label><input class="t" id="au_code" placeholder="교수자가 알려 준 코드">
  <details style="margin-top:8px"><summary class="hint">교수자이신가요?</summary><label class="f">교수자 코드</label><input class="t" id="au_tcode" placeholder="교수자만 입력"></details>`}
 async function doLogin(){
@@ -197,23 +200,55 @@ async function doLogin(){
  $('#logo').innerHTML=ART.logo();
 boot();
 }
+function infoErr(isT){
+ if(isT)return '';
+ const d=$('#au_dept').value.trim(),n=$('#au_sno').value.trim();
+ if(d.length<2)return '학과를 입력하세요.';
+ if(!/^[0-9]{6,12}$/.test(n))return '학번을 숫자로 정확히 입력하세요.';
+ return '';
+}
 async function doSignup(){
  const email=$('#au_email').value.trim(),password=$('#au_pw').value;
  if(password.length<8)return toast('비밀번호는 8자 이상으로 정하세요.');
  if(!len($('#au_name').value))return toast('이름을 입력하세요.');
  if(!len($('#au_code').value)&&!len($('#au_tcode')&&$('#au_tcode').value))return toast('수업 참여 코드를 입력하세요.');
- const vals=joinVals();
+ const vals=joinVals(),ie=infoErr(!!vals.p_teacher_code);if(ie)return toast(ie);
  const {data,error}=await db.auth.signUp({email,password});
  if(error)return toast('가입 실패: '+error.message);
  if(!data.session)return toast('가입 확인 메일을 보냈습니다. 메일의 링크를 누른 뒤 로그인하세요.');
  await join(vals);
 }
 function joinVals(){return {p_name:$('#au_name').value.trim(),p_code:$('#au_code').value.trim(),p_teacher_code:($('#au_tcode')&&$('#au_tcode').value.trim())||null}}
-async function doJoin(){if(!len($('#au_name').value))return toast('이름을 입력하세요.');await join(joinVals())}
+async function doJoin(){if(!len($('#au_name').value))return toast('이름을 입력하세요.');const v=joinVals(),ie=infoErr(!!v.p_teacher_code);if(ie)return toast(ie);await join(v)}
 async function join(v){
+ const info=v.p_teacher_code?null:{dept:$('#au_dept').value.trim(),student_no:$('#au_sno').value.trim()};
  const {error}=await db.rpc('join_class',v);
  if(error)return toast(error.message.includes('코드')?error.message:'참여 실패: '+error.message);
+ if(info){const {data:{user}}=await db.auth.getUser();if(user)await db.from('student_info').upsert({id:user.id,...info,updated_at:new Date().toISOString()},{onConflict:'id'})}
  boot();
+}
+/* 학과·학번 (본인과 교수자만) */
+let INFO=null,INFO_MISSING=false;
+async function loadInfo(){
+ const r=await db.from('student_info').select('*').eq('id',ME.id).maybeSingle();
+ if(r.error){INFO_MISSING=true;INFO=null;return}
+ INFO=r.data||null;
+}
+function showInfo(edit){
+ $('#main').innerHTML=`<div class="authwrap"><div class="card"><h3>${edit?'내 정보 수정':'학과·학번을 입력하세요'}</h3>
+  <p class="hint">${edit?'':'교수자가 학생을 확인할 수 있도록 학과와 학번을 한 번만 입력합니다. '}🔒 학과·학번은 <b>교수자만</b> 봅니다. 동료에게는 이름만 보입니다.</p>
+  <label class="f">이름</label><input class="t" value="${esc(ME.name)}" disabled>
+  <label class="f">학과</label><input class="t" id="au_dept" value="${esc(INFO?INFO.dept:'')}" placeholder="예: 국어국문학과">
+  <label class="f">학번</label><input class="t" id="au_sno" inputmode="numeric" value="${esc(INFO?INFO.student_no:'')}" placeholder="예: 2026123456">
+  <div class="row" style="margin-top:14px"><button class="btn p" onclick="saveInfo()">저장하고 계속</button>${edit?'<button class="btn" onclick="render()">취소</button>':''}</div>
+  ${edit?'':'<p class="hint" style="margin-top:8px">이름을 잘못 입력했다면 교수자에게 알려 주세요.</p>'}</div></div>`;
+}
+async function saveInfo(){
+ const ie=infoErr(false);if(ie)return toast(ie);
+ const row={id:ME.id,dept:$('#au_dept').value.trim(),student_no:$('#au_sno').value.trim(),updated_at:new Date().toISOString()};
+ const r=await db.from('student_info').upsert(row,{onConflict:'id'});
+ if(r.error)return toast('저장 실패: '+r.error.message);
+ INFO=row;toast('저장했습니다.');render();window.scrollTo(0,0);
 }
 async function logout(){if(LIVE)await db.auth.signOut();location.reload()}
 
@@ -255,7 +290,7 @@ function renderWho(){
   const us=db._users();
   $('#who').innerHTML=`<span class="demo">체험 모드</span><span class="hint">체험 계정</span><select onchange="demoSwitch(this.value)">${us.map(u=>`<option value="${u.id}" ${u.id===ME.id?'selected':''}>${esc(u.name)} (${u.role==='teacher'?'교수자':'학생'})</option>`).join('')}</select><span id="saved"></span>`;
  }else{
-  $('#who').innerHTML=`<span class="chip"><b>${esc(ME.name)}</b> · ${rl}${cls?' · '+esc(cls):''}</span><button class="btn s" onclick="logout()">로그아웃</button><span id="saved"></span>`;
+  $('#who').innerHTML=`<span class="chip"><b>${esc(ME.name)}</b> · ${rl}${cls?' · '+esc(cls):''}</span>${ME.role==='student'&&!INFO_MISSING?'<button class="btn s" onclick="showInfo(true)">내 정보</button>':''}<button class="btn s" onclick="logout()">로그아웃</button><span id="saved"></span>`;
  }
 }
 async function demoSwitch(id){if(debouncers.save){clearTimeout(debouncers.save);if(S&&MYP)await db.from('projects').update({data:S,status:S.status,shared:MYP.shared}).eq('id',MYP.id)}db._setMe(id);ME=db._me();await afterLogin()}
@@ -730,7 +765,8 @@ function stepRecv(){
  const md=n.filter(c=>respOK(c.resp)).length,fd=MY.feedback.filter(f=>respOK(f.resp)).length,dd=recv.filter(drRespDone).length;
  return head(9,`<p>받은 의견마다 세 가지를 답합니다. ① 이 의견을 <b>어떻게 이해했는가</b>, ② <b>수용·부분 수용·보류</b> 중 어떤 판단을 했고 왜 그런가, ③ 수정개요에 <b>어떻게 반영할 것인가</b>. 모든 제안을 그대로 받아들일 필요는 없습니다. 보류할 때는 <b>‘좋지만 시간상 어려움’</b>인지 <b>‘다른 의견이 있음’</b>인지 고르고, 그 이유나 내 생각을 쓰세요.</p>`,true)+`
  ${MYP.shared?'':'<div class="notice w">아직 내 글을 동료에게 공개하지 않았습니다. 7단계에서 요약문을 공개해야 동료의 메모를 받을 수 있습니다. 교수자의 의견과 8단계 초고 검토는 공개 여부와 관계없이 도착합니다.</div>'}
- <div class="stats"><div class="stat"><b>${md}/${n.length}</b>메모 답변</div><div class="stat"><b>${fd}/${MY.feedback.length}</b>종합 피드백 답변</div><div class="stat"><b>${dd}/${recv.length}</b>초고 검토 답변</div><button class="btn s" onclick="go(9)">↻ 새 의견 확인</button></div>
+ <div class="stats"><div class="stat"><b>${md}/${n.length}</b>메모 답변</div><div class="stat"><b>${fd}/${MY.feedback.length}</b>종합 피드백 답변</div><div class="stat"><b>${dd}/${recv.length}</b>초고 검토 답변</div>${RATE_MISSING?'':(()=>{const T=rateTargets();return `<div class="stat"><b>${T.filter(t=>RATINGS[t.kind+':'+t.target]).length}/${T.length}</b>🔒 도움 정도 평가</div>`})()}<button class="btn s" onclick="go(9)">↻ 새 의견 확인</button></div>
+ ${RATE_MISSING?'':'<div class="notice i">🔒 동료의 의견마다 <b>내 글을 고치는 데 얼마나 도움이 됐는지</b> 1~5점으로 평가해 주세요. 평가는 <b>교수자만</b> 보며, 의견을 준 동료에게는 보이지 않습니다.</div>'}
  <div class="tabs">
   <button class="${t==='memo'?'on':''}" onclick="UI.tab8='memo';render()">💬 요약문에 받은 메모</button>
   <button class="${t==='fb'?'on':''}" onclick="UI.tab8='fb';render()">🧾 받은 종합 피드백</button>
@@ -746,13 +782,15 @@ function memoResp(){
   <div class="hd"><span><span class="au">${c.auto?'표현 점검':esc(nameOf(c.author))}</span><span class="rolechip r-${rl}">${RLABEL[rl]}</span></span><span class="badge" style="background:${col}22;color:${col}">${esc(c.tag)}</span></div>
   <div class="q">${esc(memoWhere(c))}</div><div>${esc(c.body)}</div>
   ${radios('m'+c.id,r.verdict,`(v=>setResp('c','${c.id}','verdict',v))`,VERD_PEER)}
-  <textarea class="t" rows="2" placeholder="${RESP_PH}" oninput="setResp('c','${c.id}','plan',this.value)" ${NP}>${esc(r.plan||'')}</textarea></div>`}).join('');
+  <textarea class="t" rows="2" placeholder="${RESP_PH}" oninput="setResp('c','${c.id}','plan',this.value)" ${NP}>${esc(r.plan||'')}</textarea></div>`}).join('')+memoRates();
 }
+function memoRates(){const T=rateTargets().filter(t=>t.kind==='memo');if(!T.length||RATE_MISSING)return '';
+ return `<h3 style="margin:18px 0 8px">메모를 남긴 동료 평가</h3><p class="hint">동료 한 명이 남긴 메모 전체를 두고 평가합니다.</p>`+T.map(t=>rateBox('memo',t.target,t.reviewer)).join('')}
 function memoWhere(c){if(!isSum(c))return `${c.p+1}단락 · “${c.quote}”`;if(c.p<0)return '요약문 전체';const g=S&&S.paras[c.p]?S.paras[c.p].gist:'';return `${c.p+1}단락 요지${g?' · “'+cut(g,50)+'”':''}`}
 function fbResp(){
  if(!MY.feedback.length)return '<p class="hint">아직 받은 종합 피드백이 없습니다.</p>';
  return MY.feedback.map(f=>{const r=f.resp||{};return fbBox(f,MYP.owner)+`${radios('f'+f.id,r.verdict,`(v=>setResp('f','${f.id}','verdict',v))`,VERD_PEER)}
-  <textarea class="t" rows="3" placeholder="${RESP_PH}" oninput="setResp('f','${f.id}','plan',this.value)" ${NP}>${esc(r.plan||'')}</textarea></div>`}).join('');
+  <textarea class="t" rows="3" placeholder="${RESP_PH}" oninput="setResp('f','${f.id}','plan',this.value)" ${NP}>${esc(r.plan||'')}</textarea>${rateBox('feedback',f.id,f.reviewer)}</div>`}).join('');
 }
 function setResp(kind,id,k,v){
  const o=(kind==='c'?MY.comments:MY.feedback).find(x=>x.id===id);o.resp=Object.assign({verdict:'',plan:''},o.resp||{});o.resp[k]=v;
@@ -793,6 +831,38 @@ async function loadDR(){
  const r=await db.from('draft_reviews').select('*').eq('author',ME.id);
  MYDR={given:g.data||[],received:r.data||[]};
 }
+/* 동료 피드백 도움 정도 평가 — 평가한 본인과 교수자만 봄 */
+let RATINGS={},RATE_MISSING=false;
+const HELP=[[1,'전혀 도움 안 됨'],[2,'별로 도움 안 됨'],[3,'보통'],[4,'도움됨'],[5,'매우 도움됨']];
+const RKIND={memo:'요약문 메모',feedback:'종합 피드백',draft:'초고 상세 검토'};
+async function loadRatings(){
+ const r=await db.from('peer_ratings').select('*').eq('rater',ME.id);
+ if(r.error){RATE_MISSING=true;RATINGS={};return}
+ RATINGS={};(r.data||[]).forEach(x=>RATINGS[x.kind+':'+x.target]=x);
+}
+const isPeer=id=>{const p=PEOPLE[id];return !!p&&p.role==='student'&&id!==ME.id};
+function rateTargets(){
+ const out=[];
+ [...new Set(MY.comments.filter(c=>!c.auto&&isPeer(c.author)).map(c=>c.author))].forEach(a=>out.push({kind:'memo',target:a,reviewer:a}));
+ MY.feedback.filter(f=>isPeer(f.reviewer)).forEach(f=>out.push({kind:'feedback',target:f.id,reviewer:f.reviewer}));
+ MYDR.received.filter(r=>r.summary&&r.summary.submitted&&isPeer(r.reviewer)).forEach(r=>out.push({kind:'draft',target:r.id,reviewer:r.reviewer}));
+ return out;
+}
+function rateBox(kind,target,reviewer){
+ if(RATE_MISSING||!isPeer(reviewer))return '';
+ const x=RATINGS[kind+':'+target]||{};
+ return `<div class="ratebox"><div class="rb-h">🔒 <b>${esc(nameOf(reviewer))}</b> · ${RKIND[kind]} — 내 글을 고치는 데 얼마나 도움이 됐나요?<span class="rb-p">교수자만 봅니다 · 동료에게는 보이지 않습니다</span></div>
+ <div class="rb-s">${HELP.map(([v,l])=>`<button class="${x.score===v?'on':''}" onclick="setRate('${kind}','${target}','${reviewer}',${v})"><b>${v}</b><span>${l}</span></button>`).join('')}</div>
+ ${x.score?`<input class="t" maxlength="200" placeholder="그렇게 평가한 이유 (선택)" value="${esc(x.note||'')}" oninput="setRateNote('${kind}','${target}',this.value)" ${NP}>`:''}</div>`;
+}
+async function setRate(kind,target,reviewer,score){
+ const key=kind+':'+target,x={rater:ME.id,reviewer,kind,target,score,note:(RATINGS[key]&&RATINGS[key].note)||'',updated_at:new Date().toISOString()};
+ RATINGS[key]=x;render();
+ const r=await db.from('peer_ratings').upsert(x,{onConflict:'rater,kind,target'});
+ if(r.error)toast('저장 실패: '+r.error.message);else flashSaved();
+}
+function setRateNote(kind,target,v){const x=RATINGS[kind+':'+target];if(!x)return;x.note=v;
+ later('rt'+kind+target,async()=>{const r=await db.from('peer_ratings').update({note:v,updated_at:new Date().toISOString()}).eq('rater',ME.id).eq('kind',kind).eq('target',target);if(r.error)toast('저장 실패: '+r.error.message);else flashSaved()})}
 async function loadCounts(){
  DRCOUNT={};
  if(LIVE){const d=await db.rpc('review_counts');(d.data||[]).forEach(x=>DRCOUNT[x.author]=Number(x.n))}
@@ -860,7 +930,7 @@ function drGet(){
   <div class="pcard" style="margin:10px 0"><div class="gistbox" style="background:#eef1f6"><small style="color:#444">내가 세운 중심 주장</small>${esc(S.thesis||'(1단계에서 작성)')}</div><div class="gistbox"><small>동료가 읽은 중심 주장</small>${esc(s.thesis)} <span class="lv ${l}">${lab}</span></div></div>
   <p class="hint">영역마다 동료의 점검과 메모를 읽고, 수용·부분 수용·보류를 고른 뒤 반영 계획이나 보류 이유를 쓰세요. (10자 이상)</p>
   ${AREAS.map(ar=>`<div class="fbbox area-${ar.k}"><h4 style="margin:0 0 4px">${ar.t} <span class="hint">${ar.d}</span></h4>${drAreaHTML(r,ar)}${respUI(r,ar.k)}</div>`).join('')}
-  <div class="fbbox"><h4 style="margin:0 0 4px">우선 과제</h4><div>${esc(s.first)}</div>${respUI(r,'first')}</div></div>`}).join('');
+  <div class="fbbox"><h4 style="margin:0 0 4px">우선 과제</h4><div>${esc(s.first)}</div>${respUI(r,'first')}</div>${rateBox('draft',r.id,r.reviewer)}</div>`}).join('');
 }
 function setDrResp(id,k,f,v){const r=MYDR.received.find(x=>x.id===id);r.resp=r.resp||{};r.resp[k]=Object.assign({verdict:'',plan:''},r.resp[k]||{});r.resp[k][f]=v;
  const send=async()=>{const x=await db.from('draft_reviews').update({resp:r.resp}).eq('id',id);if(x.error)toast('저장 실패: '+x.error.message);else flashSaved()};
@@ -931,7 +1001,8 @@ function submitAll(){const miss=STEPS.slice(1,11).map((s,i)=>stepDone(i+1)?null:
 async function loadTeacher(){
  CLASSES=await q(db.from('classes').select('*').order('code'));
  const [projects,comments,feedback,dr]=await Promise.all([q(db.from('projects').select('*')),q(db.from('comments').select('*')),q(db.from('feedback').select('*')),db.from('draft_reviews').select('*').then(r=>r.data||[])]);
- TD={projects,comments,feedback,dr};
+ const [info,rt]=await Promise.all([db.from('student_info').select('*').then(r=>r.error?[]:(r.data||[])),db.from('peer_ratings').select('*').then(r=>r.error?null:(r.data||[]))]);
+ TD={projects,comments,feedback,dr,info:{},rt:rt||[],rtMissing:rt===null};info.forEach(x=>TD.info[x.id]=x);
 }
 async function tgo(p){UI.tpage=p;VIEW=null;CUR=null;UI.pending=null;await loadTeacher();render();window.scrollTo(0,0)}
 function studentRows(){
@@ -944,8 +1015,20 @@ function studentRows(){
   const f=D?doneFlags(D,X,rev,DRx):Array(12).fill(false);const nx=f.findIndex((v,i)=>i>0&&!v);
   const pts=D?D.ai.filter(e=>!e.refusal).flatMap(e=>e.points):[],need=X.comments.filter(c=>c.tag!=='잘된 점');
   return {st,pr,D,pct:pctOf(f),cur:nx<0?'완료':nx+'. '+STEPS[nx].t,gist:D?`${D.paras.filter(p=>gistState(p).ok).length}/${D.paras.length}`:'-',ai:`${pts.filter(p=>p.verdict).length}/${pts.length}`,
-   resp:`${need.filter(c=>respOK(c.resp)).length+X.feedback.filter(x=>respOK(x.resp)).length}/${need.length+X.feedback.length}`,rev,drg:DRx.given.filter(r=>r.summary&&r.summary.submitted).length,drr:DRx.received.filter(r=>r.summary&&r.summary.submitted).length,status:pr?pr.status:'시작 전',shared:pr&&pr.shared,upd:pr?fmt(pr.updated_at):''};
+   resp:`${need.filter(c=>respOK(c.resp)).length+X.feedback.filter(x=>respOK(x.resp)).length}/${need.length+X.feedback.length}`,rev,drg:DRx.given.filter(r=>r.summary&&r.summary.submitted).length,drr:DRx.received.filter(r=>r.summary&&r.summary.submitted).length,status:pr?pr.status:'시작 전',shared:pr&&pr.shared,upd:pr?fmt(pr.updated_at):'',
+   dept:(TD.info[st.id]||{}).dept||'',sno:(TD.info[st.id]||{}).student_no||'',...helpStat(st.id)};
  });
+}
+function helpStat(id){const got=TD.rt.filter(x=>x.reviewer===id),gave=TD.rt.filter(x=>x.rater===id);
+ return {hN:got.length,hAvg:got.length?(got.reduce((a,x)=>a+x.score,0)/got.length).toFixed(1):'',hGave:gave.length}}
+function teacherRates(uid){
+ if(TD.rtMissing)return '<div class="notice w">도움 정도 평가 기능을 쓰려면 Supabase에서 추가 SQL을 실행해야 합니다.</div>';
+ const got=TD.rt.filter(x=>x.reviewer===uid),gave=TD.rt.filter(x=>x.rater===uid),h=helpStat(uid);
+ const tb=(rows,who)=>rows.length?`<div style="overflow:auto"><table class="tb"><tr><th>${who}</th><th>종류</th><th>점수</th><th>이유</th><th>시각</th></tr>${rows.map(x=>`<tr><td>${esc(nameOf(who==='평가한 학생'?x.rater:x.reviewer))}</td><td>${RKIND[x.kind]||x.kind}</td><td><b>${x.score}</b> · ${(HELP.find(h=>h[0]===x.score)||[,''])[1]}</td><td>${esc(x.note||'')}</td><td class="hint">${fmt(x.updated_at)}</td></tr>`).join('')}</table></div>`:'<p class="hint">없음</p>';
+ return `<div class="notice i">🔒 이 화면은 교수자만 봅니다. 학생에게는 자기가 받은 평가가 보이지 않습니다.</div>
+ <div class="stats"><div class="stat"><b>${h.hAvg||'-'}</b>이 학생 피드백의 평균 도움도 (${h.hN}건)</div><div class="stat"><b>${h.hGave}</b>이 학생이 한 평가</div></div>
+ <div class="card"><h3>이 학생의 피드백이 받은 평가</h3>${tb(got,'평가한 학생')}</div>
+ <div class="card"><h3>이 학생이 동료 피드백에 준 평가</h3>${tb(gave,'평가받은 동료')}</div>`;
 }
 function teacherDash(){
  if(VIEW)return teacherStudent();
@@ -954,17 +1037,17 @@ function teacherDash(){
  return heroT('학생 현황','학생별 진행률과 학습 기록을 확인하고, 글에 메모와 피드백을 남깁니다.')+`
  ${!LIVE?'<div class="notice a">체험 모드입니다. 오른쪽 위에서 학생 계정으로 바꾸면 학생 화면을, 다시 선민서(교수자)로 돌아오면 그 결과를 이곳에서 볼 수 있습니다.</div>':''}
  <div class="row" style="margin-bottom:12px"><select class="t" style="width:auto" onchange="UI.tclass=this.value;render()"><option value="">전체 분반</option>${CLASSES.map(c=>`<option value="${esc(c.code)}" ${UI.tclass===c.code?'selected':''}>${esc(c.name)}</option>`).join('')}</select><button class="btn s" onclick="tgo('dash')">↻ 새로고침</button><button class="btn s" onclick="dlCSV()">⬇ 현황표 (.csv)</button></div>
- <div class="card"><div style="overflow:auto"><table class="tb"><tr><th>학생</th><th>분반</th><th>진행률</th><th>다음 할 단계</th><th>요지 완성</th><th>AI 지적 판단</th><th>받은 의견 답변</th><th>동료 검토</th><th>초고 검토<br>(함/받음)</th><th>공개</th><th>상태</th><th>최근 저장</th><th></th></tr>
- ${rows.length?rows.map(r=>`<tr><td><b>${esc(r.st.name)}</b></td><td>${esc((CLASSES.find(c=>c.code===r.st.class_code)||{}).name||r.st.class_code||'')}</td><td><div class="progress" style="margin:4px 0;width:80px"><i style="width:${r.pct}%"></i></div>${r.pct}%</td><td>${esc(r.cur)}</td><td>${r.gist}</td><td>${r.ai}</td><td>${r.resp}</td><td>${r.rev}건</td><td>${r.drg} / ${r.drr}</td><td>${r.shared?'공개':'—'}</td><td>${esc(r.status)}</td><td class="hint">${esc(r.upd)}</td><td>${r.pr?`<button class="btn s p" onclick="openStudent('${r.pr.id}')">열기</button>`:''}</td></tr>`).join(''):'<tr><td colspan="13" class="hint">아직 가입한 학생이 없습니다. ‘분반·참여 코드’에서 코드를 확인해 학생들에게 알려 주세요.</td></tr>'}</table></div></div>
+ <div class="card"><div style="overflow:auto"><table class="tb"><tr><th>학생</th><th>분반</th><th>진행률</th><th>다음 할 단계</th><th>요지 완성</th><th>AI 지적 판단</th><th>받은 의견 답변</th><th>동료 검토</th><th>초고 검토<br>(함/받음)</th><th>피드백 도움도 🔒<br>(평균·건수)</th><th>공개</th><th>상태</th><th>최근 저장</th><th></th></tr>
+ ${rows.length?rows.map(r=>`<tr><td><b>${esc(r.st.name)}</b>${r.dept||r.sno?`<div class="hint" style="font-size:12px;white-space:nowrap">${esc(r.dept)} · ${esc(r.sno)}</div>`:'<div class="hint" style="font-size:12px">학과·학번 미입력</div>'}</td><td>${esc((CLASSES.find(c=>c.code===r.st.class_code)||{}).name||r.st.class_code||'')}</td><td><div class="progress" style="margin:4px 0;width:80px"><i style="width:${r.pct}%"></i></div>${r.pct}%</td><td>${esc(r.cur)}</td><td>${r.gist}</td><td>${r.ai}</td><td>${r.resp}</td><td>${r.rev}건</td><td>${r.drg} / ${r.drr}</td><td>${r.hN?`<b>${r.hAvg}</b> · ${r.hN}건`:'—'}</td><td>${r.shared?'공개':'—'}</td><td>${esc(r.status)}</td><td class="hint">${esc(r.upd)}</td><td>${r.pr?`<button class="btn s p" onclick="openStudent('${r.pr.id}')">열기</button>`:''}</td></tr>`).join(''):'<tr><td colspan="14" class="hint">아직 가입한 학생이 없습니다. ‘분반·참여 코드’에서 코드를 확인해 학생들에게 알려 주세요.</td></tr>'}</table></div></div>
  <div class="card"><h3>메모 유형 분포</h3><div class="bars">${Object.entries(tc).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div><span>${esc(k)}</span><i style="width:${v/mx*100}%;background:${TAGS[k]||'#999'}"></i><span>${v}</span></div>`).join('')||'<p class="hint">메모 없음</p>'}</div><p class="hint">학생들의 글에서 자주 지적된 논리 문제를 다음 수업 주제로 고를 때 참고하세요.</p></div>`;
 }
 async function openStudent(pid){VIEW=await loadCtx(pid);UI.tabT='rec';UI.pending=null;render();window.scrollTo(0,0)}
 function teacherStudent(){
  const t=UI.tabT,D=Object.assign(blankData(),VIEW.project.data);
  return `<button class="back" onclick="VIEW=null;CUR=null;tgo('dash')">← 학생 현황</button>
- ${heroT(esc(nameOf(VIEW.project.owner))+' 학생의 기록',esc(D.title||'제목 없음')+' · '+esc(VIEW.project.status))}
- <div class="tabs"><button class="${t==='rec'?'on':''}" onclick="UI.tabT='rec';render()">📚 학습 기록</button><button class="${t==='doc'?'on':''}" onclick="UI.tabT='doc';render()">📝 글에 메모하기</button><button class="${t==='fb'?'on':''}" onclick="UI.tabT='fb';render()">🧾 종합 피드백</button><button class="${t==='dr'?'on':''}" onclick="UI.tabT='dr';render()">📋 초고 동료 검토</button></div>
- ${t==='rec'?`<div class="row" style="margin-bottom:10px"><button class="btn s" onclick="viewPortfolio(VIEW)">📄 보기·PDF</button><button class="btn s" onclick="dlPortfolio(VIEW)">⬇ 이 학생 기록 Word(.docx)</button></div><div class="preview">${portfolioBody(D,VIEW,(TD.dr||[]).filter(r=>r.author===VIEW.project.owner))}</div>`:t==='doc'?docView(VIEW,'teacher'):t==='dr'?teacherDR(VIEW.project.owner):fbForm(VIEW)}`;
+ ${heroT(esc(nameOf(VIEW.project.owner))+' 학생의 기록',(()=>{const i=TD.info[VIEW.project.owner];return (i?esc(i.dept)+' · '+esc(i.student_no)+' · ':'')})()+esc(D.title||'제목 없음')+' · '+esc(VIEW.project.status))}
+ <div class="tabs"><button class="${t==='rec'?'on':''}" onclick="UI.tabT='rec';render()">📚 학습 기록</button><button class="${t==='doc'?'on':''}" onclick="UI.tabT='doc';render()">📝 글에 메모하기</button><button class="${t==='fb'?'on':''}" onclick="UI.tabT='fb';render()">🧾 종합 피드백</button><button class="${t==='dr'?'on':''}" onclick="UI.tabT='dr';render()">📋 초고 동료 검토</button><button class="${t==='rt'?'on':''}" onclick="UI.tabT='rt';render()">🔒 피드백 도움 평가</button></div>
+ ${t==='rec'?`<div class="row" style="margin-bottom:10px"><button class="btn s" onclick="viewPortfolio(VIEW)">📄 보기·PDF</button><button class="btn s" onclick="dlPortfolio(VIEW)">⬇ 이 학생 기록 Word(.docx)</button></div><div class="preview">${portfolioBody(D,VIEW,(TD.dr||[]).filter(r=>r.author===VIEW.project.owner))}</div>`:t==='doc'?docView(VIEW,'teacher'):t==='dr'?teacherDR(VIEW.project.owner):t==='rt'?teacherRates(VIEW.project.owner):fbForm(VIEW)}`;
 }
 function classesPage(){
  return heroT('분반·참여 코드','학생이 가입할 때 입력할 분반 참여 코드를 관리합니다.')+`
@@ -974,7 +1057,7 @@ function classesPage(){
 }
 async function addClass(){const code=$('#nc_code').value.trim(),name=$('#nc_name').value.trim();if(code.length<4||!name)return toast('코드(4자 이상)와 이름을 입력하세요.');await q(db.from('classes').insert({code,name}));toast('분반을 만들었습니다.');tgo('classes')}
 function dlCSV(){const rows=studentRows();const e=s=>'"'+String(s??'').replace(/"/g,'""')+'"';
- const csv=['학생,분반,진행률,다음 단계,요지 완성,AI 판단,의견 답변,동료 검토,공개,상태,최근 저장',...rows.map(r=>[r.st.name,r.st.class_code,r.pct+'%',r.cur,r.gist,r.ai,r.resp,r.rev,r.shared?'공개':'',r.status,r.upd].map(e).join(','))].join('\n');
+ const csv=['학생,학과,학번,분반,진행률,다음 단계,요지 완성,AI 판단,의견 답변,동료 검토,초고 검토 함,초고 검토 받음,피드백 도움도 평균,받은 도움 평가 수,한 도움 평가 수,공개,상태,최근 저장',...rows.map(r=>[r.st.name,r.dept,r.sno,r.st.class_code,r.pct+'%',r.cur,r.gist,r.ai,r.resp,r.rev,r.drg,r.drr,r.hAvg,r.hN,r.hGave,r.shared?'공개':'',r.status,r.upd].map(e).join(','))].join('\n');
  dl('학생현황.csv','﻿'+csv,'text/csv;charset=utf-8')}
 
 /* ================= 내보내기 ================= */
@@ -1031,6 +1114,7 @@ function render(){
  renderWho();renderNav();
  if(ME.role==='teacher'){$('#main').innerHTML=(UI.tpage==='classes'?classesPage():teacherDash())+toolsHTML();return}
  if(!S)return;
+ if(LIVE&&!INFO&&!INFO_MISSING)return showInfo(false);
  $('#main').innerHTML=VIEWS[S.step]()+toolsHTML();
 }
 document.addEventListener('mousedown',e=>{if(e.target.id!=='selbtn'&&!e.target.closest('.doc'))$('#selbtn').style.display='none'});

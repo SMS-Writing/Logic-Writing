@@ -118,7 +118,9 @@ function seedDemo(kind){
    {id:'p1',owner:'u1',class_code:'WRITING-A',shared:true,status:'진행 중',data:sampleProject(kind),updated_at:T(25,2,0)},
    {id:'p2',owner:'u2',class_code:'WRITING-A',shared:true,status:'진행 중',data:peerProject(),updated_at:T(24,9,0)},
    {id:'p3',owner:'u3',class_code:'WRITING-A',shared:false,status:'진행 중',data:thirdProject(),updated_at:T(23,5,0)}],
-  comments:[], replies:[], feedback:[], reader:[], draft_reviews:[]};
+  comments:[], replies:[], feedback:[], reader:[], draft_reviews:[],
+  student_info:[{id:'u1',dept:'국어국문학과',student_no:'2026130101'},{id:'u2',dept:'철학과',student_no:'2026130202'},{id:'u3',dept:'미디어학부',student_no:'2026130303'}],
+  peer_ratings:[]};
  const full=kind==='full';
  const C=(id,p,author,quote,tag,body,at,resp)=>DB.comments.push({id,project:'p1',author,auto:false,p,quote,tag,body,resolved:false,resp:full?resp:null,created_at:at});
  C('c1',1,'t1','학습자는 결국 스스로 논증을 구성하는 능력을 잃게 될 것이다','논리 비약','‘반복되면’에서 ‘능력을 잃는다’까지 어떤 단계를 거치나요? 이 연결을 보여 줄 근거가 없으면 예측에 그칩니다.',T(24,5,40),{verdict:'수용',plan:'2단락의 ‘결국 잃게 될 것이다’를 지우고, AI가 초고를 쓸 때 연습되지 않는 활동(쟁점 좁히기, 약점 발견)을 구체적으로 제시한다.'});
@@ -172,5 +174,7 @@ function seedDemo(kind){
   M('content','2단락','프로그래밍·글쓰기 두 사례만으로 모든 과목을 일반화하기에는 근거가 부족하다.'),
   M('structure','2단락→3단락','효과 차이에서 혼란 문제로 넘어가는 연결 문장이 없다.'),
   M('expression','4단락 끝 문장','‘충분히 감수할 만하다’는 평가에 이유가 빠져 주관적으로 읽힌다.')];
+ if(full){const R=(rater,reviewer,kind,target,score,note)=>DB.peer_ratings.push({id:'r'+DB.peer_ratings.length,rater,reviewer,kind,target,score,note,updated_at:T(26,3,0)});
+  R('u1','u2','feedback','f1',4,'3단락 근거 문제를 짚어 줘서 수정 방향이 분명해졌다.');R('u1','u2','draft','dr1',5,'영역별 메모가 구체적이었다.');R('u2','u1','draft','dr2',3,'');}
  return DB;
 }
