@@ -2,24 +2,33 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#9a0f35">
 <title>논리로 고쳐 쓰기 · 논증적 글쓰기 디지털 교과서</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%239a0f35'/%3E%3Cpath d='M18 20h28M18 30h20M18 40h24' stroke='%23fff' stroke-width='5' stroke-linecap='round'/%3E%3Ccircle cx='46' cy='44' r='7' fill='%23e0a526'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;700&display=swap">
 <link rel="stylesheet" href="style.css">
 <script src="config.js"></script>
 </head>
 <body>
 <header>
-  <div class="brand"><b>논리로 고쳐 쓰기</b><span>논증적 글쓰기 디지털 교과서</span></div>
-  <div class="gprog" id="gprog"><span>학습 진행률</span><span class="bar"><i id="gbar"></i></span><span id="gpct">0%</span></div>
+  <div class="brand"><span class="logo" id="logo"></span><span><b>논리로 고쳐 쓰기</b><span>논증적 글쓰기 디지털 교과서</span></span></div>
+  <div class="gprog" id="gprog"><span>학습 진행률</span><span class="bar"><i id="gbar"></i></span><b id="gpct">0%</b></div>
   <div class="who" id="who"></div>
 </header>
+<div id="strip"></div>
 <div class="layout">
   <nav id="nav"></nav>
   <main id="main"><p class="hint">불러오는 중…</p></main>
 </div>
-<footer>© 선민서 · 고려대학교 학부대학 글쓰기 수업용 개인 제작 자료 (학부대학 공식 자료 아님) · 무단 전재·배포 금지</footer>
+<footer>Copyright © 2026 선민서. · 고려대학교 학부대학 글쓰기 수업용 개인 제작 자료 (학부대학 공식 자료 아님) · 무단 전재·배포 금지</footer>
 <button id="selbtn" onmousedown="event.preventDefault()" onclick="startComment()">＋ 메모 남기기</button>
 <div class="toast" id="toast"></div>
+<script src="art.js"></script>
 <script src="samples.js"></script>
 <script src="app.js"></script>
 </body>
