@@ -1,4 +1,4 @@
-/* 논리로 고쳐 쓰기 — 직접 그린 그림 (SVG). 외부 이미지·저작물을 쓰지 않습니다. */
+/* 논증으로 완성하는 소논문형 보고서 — 직접 그린 그림 (SVG). 외부 이미지·저작물을 쓰지 않습니다. */
 const ART = (() => {
  const W = '#ffffff', G = '#f5c451', GL = 'rgba(255,255,255,.22)';
  const wrap = (body, vb = '0 0 120 120') => `<svg viewBox="${vb}" xmlns="http://www.w3.org/2000/svg" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;

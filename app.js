@@ -1,4 +1,4 @@
-/* 논리로 고쳐 쓰기 — 앱 본체
+/* 논증으로 완성하는 소논문형 보고서 — 앱 본체
    서버(Supabase)가 config.js에 설정되어 있으면 공유 저장소를 쓰고,
    없으면 같은 코드로 '체험 모드'(이 브라우저에만 저장)로 동작합니다. */
 'use strict';
@@ -177,7 +177,7 @@ function showAuth(mode){
  $('#who').innerHTML=LIVE&&mode==='join'?`<button class="btn s" onclick="logout()">로그아웃</button>`:'';
  const tab=UI.auth;
  $('#main').innerHTML=`<div class="authwrap">
-  <span class="authart">${ART.welcome()}</span><h2 style="text-align:center;margin:4px 0">논리로 고쳐 쓰기</h2><p class="hint" style="text-align:center">단락 요지 중심 논증적 글쓰기 디지털 교과서</p>
+  <span class="authart">${ART.welcome()}</span><h2 style="text-align:center;margin:4px 0">논증으로 완성하는 소논문형 보고서</h2><p class="hint" style="text-align:center">단락 요지·동료 검토·수정 설계 글쓰기 AIDT</p>
   ${tab==='join'?`<div class="card"><h3>수업 참여</h3><p class="hint">로그인은 되었지만 아직 수업에 참여하지 않았습니다.</p>${joinFields()}<button class="btn p" style="width:100%;margin-top:12px" onclick="doJoin()">수업 참여하기</button></div>`:`
   <div class="tabs"><button class="${tab==='login'?'on':''}" onclick="showAuth('login')">로그인</button><button class="${tab==='signup'?'on':''}" onclick="showAuth('signup')">처음 가입</button></div>
   <div class="card">
