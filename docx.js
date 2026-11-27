@@ -29,19 +29,27 @@ const DOCX = (() => {
   let out = '';
   node.childNodes.forEach(n => {
    if (n.nodeType === 3) { const t = n.textContent.replace(/\s+/g, ' '); if (!t) return;
-    out += `<w:r><w:rPr>${f.b ? '<w:b/>' : ''}${f.hl ? '<w:highlight w:val="yellow"/>' : ''}${f.sup ? '<w:vertAlign w:val="superscript"/>' : ''}${f.gray ? '<w:color w:val="666666"/><w:sz w:val="19"/>' : ''}</w:rPr><w:t xml:space="preserve">${x(t)}</w:t></w:r>`; }
+    out += `<w:r><w:rPr>${f.b ? '<w:b/>' : ''}${f.hl ? '<w:highlight w:val="yellow"/>' : ''}${f.sup ? '<w:vertAlign w:val="superscript"/>' : ''}${f.gray ? '<w:color w:val="666666"/><w:sz w:val="19"/>' : f.small ? '<w:sz w:val="19"/>' : ''}</w:rPr><w:t xml:space="preserve">${x(t)}</w:t></w:r>`; }
    else if (n.nodeType === 1) { const tg = n.tagName.toLowerCase();
     if (tg === 'br') out += '<w:r><w:br/></w:r>';
-    else out += runs(n, { ...f, b: f.b || tg === 'b' || tg === 'strong' || tg === 'th', hl: f.hl || tg === 'mark', sup: f.sup || tg === 'sup', gray: f.gray || n.classList.contains('c') || n.classList.contains('hint') }); }
+    else out += runs(n, { ...f, b: f.b || tg === 'b' || tg === 'strong' || tg === 'th', hl: f.hl || tg === 'mark', sup: f.sup || tg === 'sup', gray: f.gray || n.classList.contains('c') || n.classList.contains('hint'), small: f.small }); }
   });
   return out;
  }
  const para = (inner, style) => `<w:p>${style ? `<w:pPr><w:pStyle w:val="${style}"/></w:pPr>` : ''}${inner}</w:p>`;
  function table(t) {
-  const rows = [...t.querySelectorAll('tr')], cols = Math.max(...rows.map(r => r.children.length)), w = Math.floor(9000 / cols);
-  return `<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:tblBorders>${['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map(s => `<w:${s} w:val="single" w:sz="4" w:color="A0AEC0"/>`).join('')}</w:tblBorders><w:tblCellMar><w:left w:w="80" w:type="dxa"/><w:right w:w="80" w:type="dxa"/></w:tblCellMar></w:tblPr>
-   <w:tblGrid>${Array(cols).fill(`<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>
-   ${rows.map(r => `<w:tr>${[...r.children].map(c => `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/>${c.tagName === 'TH' ? '<w:shd w:val="clear" w:color="auto" w:fill="E9F0F7"/>' : ''}</w:tcPr><w:p><w:pPr><w:spacing w:after="0"/></w:pPr>${runs(c, { b: c.tagName === 'TH' })}</w:p></w:tc>`).join('')}</w:tr>`).join('')}</w:tbl><w:p/>`;
+  const rows = [...t.querySelectorAll('tr')], cols = Math.max(...rows.map(r => r.children.length));
+  // 칸마다 글자 수를 재서 너비를 나눔 (번호 같은 짧은 칸은 좁게, 긴 글 칸은 넓게)
+  const TOTAL = 9300, need = Array(cols).fill(0);
+  rows.forEach(r => [...r.children].forEach((c, i) => { const L = c.textContent.trim().length; need[i] = Math.max(need[i], Math.min(L, 60)); }));
+  const avg = Array(cols).fill(0); rows.forEach(r => [...r.children].forEach((c, i) => { avg[i] += Math.min(c.textContent.trim().length, 200) / rows.length; }));
+  const wt = need.map((m, i) => Math.max(3, Math.sqrt(Math.max(m, 2)) * 2 + avg[i] / 6));
+  const sum = wt.reduce((a, b) => a + b, 0);
+  let ws = wt.map(v => Math.max(600, Math.round(TOTAL * v / sum)));
+  const k = TOTAL / ws.reduce((a, b) => a + b, 0); ws = ws.map(v => Math.round(v * k));
+  return `<w:tbl><w:tblPr><w:tblW w:w="${TOTAL}" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders>${['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map(s => `<w:${s} w:val="single" w:sz="4" w:color="A0AEC0"/>`).join('')}</w:tblBorders><w:tblCellMar><w:left w:w="80" w:type="dxa"/><w:right w:w="80" w:type="dxa"/></w:tblCellMar></w:tblPr>
+   <w:tblGrid>${ws.map(w => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>
+   ${rows.map(r => `<w:tr><w:trPr><w:cantSplit/></w:trPr>${[...r.children].map((c, i) => `<w:tc><w:tcPr><w:tcW w:w="${ws[i]}" w:type="dxa"/>${c.tagName === 'TH' ? '<w:shd w:val="clear" w:color="auto" w:fill="E9F0F7"/>' : ''}</w:tcPr><w:p><w:pPr><w:spacing w:after="0" w:line="264" w:lineRule="auto"/></w:pPr>${runs(c, { b: c.tagName === 'TH', small: true })}</w:p></w:tc>`).join('')}</w:tr>`).join('')}</w:tbl><w:p/>`;
  }
  function blocks(root) {
   let out = '';
